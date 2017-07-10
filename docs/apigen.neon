@@ -3,7 +3,7 @@ source:
 	- ../../modules/
 	- ../../system/
 # Directory where to save the generated documentation
-destination: ./docs/api
+destination: ./../../docs/api
 # List of allowed file extensions
 #extensions: [php]
 # Mask to exclude file or directory from processing

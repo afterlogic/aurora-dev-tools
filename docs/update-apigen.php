@@ -7,7 +7,7 @@ $sDocsPath = dirname(__File__);
 $sRootPath = dirname(dirname($sDocsPath));
 
 $sMdFile = $sRootPath.'/apigen-overview.md';
-$sDocsFile = $sDocsPath.'/docs/api/index.html';
+$sDocsFile = $sRootPath.'/docs/api/index.html';
 
 
 if (file_exists($sMdFile) && file_exists($sDocsFile))
