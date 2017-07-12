@@ -1,7 +1,7 @@
 <?php
 echo "Start documentation custom process";
 
-include "Parsedown.php";
+include "parsedown.php";
 
 $sDocsPath = dirname(__File__);
 $sRootPath = dirname(dirname($sDocsPath));
@@ -24,14 +24,14 @@ if (file_exists($sMdFile) && file_exists($sDocsFile))
 		$sDoc = preg_replace("/id=\"content\".*(?:\r)*(?:\n)*.*<\/h1>/", "$0" . $sOverviewtext, $sDoc);
 		file_put_contents($sDocsFile, $sDoc);
 		
-		echo "Overview was saccessully added";
+		echo "Overview was saccessully added \r\n";
 	}
 	else
 	{
-		echo "Can't insert overview";
+		echo "Can't insert overview \r\n";
 	}
 }
 else
 {
-	echo "apigen-overview.md or documentation not found";
+	echo "apigen-overview.md or documentation not found \r\n";
 }
