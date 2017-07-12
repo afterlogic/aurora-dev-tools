@@ -15,7 +15,7 @@ do
     cd -  > /dev/null;
 done
 
-cd ../build
+cd ../dev
 
 chmod +x build.sh;
 chmod +x update.sh;
