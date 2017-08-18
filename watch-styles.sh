@@ -11,4 +11,4 @@ do
 	fi
 done
 
-gulp styles:watch --modules $(IFS=, ; echo "${Modules[*]}") --themes Default,Funny
+gulp styles:watch --modules $(IFS=, ; echo "${Modules[*]}") --themes Default,DeepForest,Funny
