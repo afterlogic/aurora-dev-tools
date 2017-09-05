@@ -13,6 +13,7 @@ exclude:
 	- */Dropbox/
 	- */Google/
 	- */OAuthClient/
+	- /Licensing/
 # Don't generate documentation for classes from file or directory with this mask
 # skipDocPath:
 # Don't generate documentation for classes with this name prefix
