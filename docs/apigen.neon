@@ -24,7 +24,7 @@ exclude:
 # main: Modules
 
 # Title of generated documentation
-title: Afterlogic Aurora Core Documentation
+title: Afterlogic Aurora Platform API Reference
 # Documentation base URL
 # baseUrl:
 # Google Custom Search ID

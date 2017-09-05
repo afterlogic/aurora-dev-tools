@@ -1,9 +1,9 @@
 {
-  "name": "Aurora Files Web API Reference",
+  "name": "Afterlogic Aurora Platform Web API Reference",
   "version": "0.1.0",
   "description": "",
-  "url" : "https://aurora-files.afterlogic.com/",
-  "sampleUrl" : "https://aurora-files.afterlogic.com/",
+  "url" : "https://afterlogic.com/",
+  "sampleUrl" : "https://afterlogic.com/",
   "template": {
 	  "forceLanguage": "en"
   },
