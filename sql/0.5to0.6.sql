@@ -1,4 +1,4 @@
-USE YOU_DB_NAME; #set you db name
+USE `YOU_DB_NAME`; #set you db name
 SET @prefix = 'YOU_PREFIX'; #set you DBPrefix
 
 SET @sql1 = CONCAT("UPDATE ", @prefix, "eav_entities SET entity_type='Aurora\\\\Modules\\\\StandardAuth\\\\Classes\\\\Account' WHERE entity_type='CAccount'");
