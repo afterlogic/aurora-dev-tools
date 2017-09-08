@@ -3,16 +3,16 @@
 // remove the following line for real use
 exit('remove this line');
 
-$sImportProductPath = "d:/web/OpenServer/domains/p7.dev";
+$sP7ProductPath = "path to your p7 installation";
 
-$sImportApiPath = $sImportProductPath . '/libraries/afterlogic/api.php';
+$sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
-if (!file_exists($sImportApiPath))
+if (!file_exists($sP7ApiPath))
 {
 	exit("Wrong path for import");
 }
 
-require_once $sImportApiPath;
+require_once $sP7ApiPath;
 require_once "../system/autoload.php";
 \Aurora\System\Api::Init();
 
