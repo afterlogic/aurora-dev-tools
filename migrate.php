@@ -14,7 +14,7 @@ if (!file_exists($sP7ApiPath))
 
 require_once $sP7ApiPath;
 require_once "../system/autoload.php";
-\Aurora\System\Api::Init();
+\Aurora\System\Api::Init(true);
 
 /* @var $oApiDomainsManager CApiDomainsManager */
 $oApiDomainsManager = \CApi::Manager('domains');
@@ -34,7 +34,7 @@ if (file_exists($sMigrationLogFile))
 }
 if (isset($oMigrationLog->CurDomainId) && isset($oMigrationLog->CurUserId))
 {
-	\Aurora\System\Api::Log("Continue migration from Domain: {$oMigrationLog->CurDomainId} User: {$oMigrationLog->CurUserId}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+	\Aurora\System\Api::Log("Continue migration from Domain: {$oMigrationLog->CurDomainId} UserId: {$oMigrationLog->CurUserId}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 }
 else
 {
@@ -79,8 +79,6 @@ foreach ($aDomains as $iDomainId => $oDomainItem)
 	$iUsersCount = $oApiUsersManager->getUsersCountForDomain($iDomainId);
 	$iPageUserCount = ceil($iUsersCount / $iItemsPerPage);
 
-	\Aurora\System\Api::skipCheckUserRole(true);
-
 	$oContactsDecorator = \Aurora\Modules\Contacts\Module::Decorator();
 	$oCoreDecorator = \Aurora\Modules\Core\Module::Decorator();
 
@@ -96,32 +94,38 @@ foreach ($aDomains as $iDomainId => $oDomainItem)
 			foreach ($aUsers as $aUserItem)
 			{
 				$iUserId = (int) $aUserItem[4];
-				if (!$bFindUser && $oMigrationLog->CurUserId !== 0 && $iUserId !== $oMigrationLog->CurUserId)
+				$sUserEmail = $aUserItem[1];
+				if (!$bFindUser && $oMigrationLog->CurUserId !== 0 && $iUserId < $oMigrationLog->CurUserId)
 				{
 					//skip User if already done
-					\Aurora\System\Api::Log("Skip user: " . $aUserItem[1], \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					\Aurora\System\Api::Log("Skip user: " . $sUserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					continue;
 				}
 				else
 				{
 					$bFindUser = true;
 				}
-				$oUser = $oCoreDecorator->GetUserByPublicId($aUserItem[1]);
+				$oUser = $oCoreDecorator->GetUserByPublicId($sUserEmail);
 				if ($oUser)
 				{
-					\Aurora\System\Api::Log("User already exists: " . $aUserItem[1], \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					\Aurora\System\Api::Log("User already exists: " . $sUserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				}
 				else
 				{
-					if (!$oCoreDecorator->CreateUser(0, $aUserItem[1], \Aurora\System\Enums\UserRole::NormalUser, false))
+					if (!$oCoreDecorator->CreateUser(0, $sUserEmail, \Aurora\System\Enums\UserRole::NormalUser, false))
 					{
-						\Aurora\System\Api::Log("Error while User creation: " . $aUserItem[1], \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						break;
+						\Aurora\System\Api::Log("Error while User creation: " . $sUserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						exit("Error during migration process");
 					}
 					else
 					{
-						$oUser = $oCoreDecorator->GetUserByPublicId($aUserItem[1]);
+						$oUser = $oCoreDecorator->GetUserByPublicId($sUserEmail);
 					}
+				}
+				if (!UserP7ToP8($iUserId, $oApiUsersManager, $oUser, $oCoreDecorator))
+				{
+					\Aurora\System\Api::Log("Error while User settings creation: " . $sUserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Error during migration process");
 				}
 				$iUserCount++;
 				$oMigrationLog->CurUserId = $iUserId;
@@ -138,23 +142,22 @@ foreach ($aDomains as $iDomainId => $oDomainItem)
 				/* @var $oListItem CContactListItem */
 				foreach ($aUserListItems as $oListItem)
 				{
-					if (!$bFindContact && $oMigrationLog->CurContactsId !== 0 && $oListItem->Id !== $oMigrationLog->CurContactsId)
+					if (!$bFindContact && $oMigrationLog->CurContactsId !== 0 && $oListItem->Id <= $oMigrationLog->CurContactsId)
 					{
 						//skip Contact if already done
 						\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						continue;
 					}
-					else if (!$bFindContact)
+					else
 					{
 						$bFindContact = true;
-						continue;
 					}
 					$oContact = $oApiContacts->getContactById($oListItem->IdUser, $oListItem->Id);
 					$aContactOptions = ContactP7ToP8($oContact);
 					if (!$contactResult = $oContactsDecorator->CreateContact($aContactOptions, $oUser->EntityId))
 					{
 						\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						break;
+						exit("Error during migration process");
 					}
 					else
 					{
@@ -163,17 +166,47 @@ foreach ($aDomains as $iDomainId => $oDomainItem)
 						$iContactsCount++;
 					}
 				}
-				\Aurora\System\Api::Log("Contacts processed: " . $iContactsCount, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("User: $sUserEmail Contacts processed: " . $iContactsCount, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 		}
 		$oMigrationLog->CurUsersPage++;
 	}
-	$oMigrationLog->CurUsersPage = 0;
-
-	\Aurora\System\Api::skipCheckUserRole(false);
+	$oMigrationLog->CurUsersPage = 1;
 }
 
 \Aurora\System\Api::Log("Done. $iUserCount users processed", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+
+function UserP7ToP8($iUserId, $oApiUsersManager, Aurora\Modules\Core\Classes\User $oP8User, $oCoreDecorator)
+{
+	$oP7User = $oApiUsersManager->getUserById($iUserId);
+	$iAccountId = $oApiUsersManager->getDefaultAccountId($iUserId);
+	$oAccount = $oApiUsersManager->getAccountById($iAccountId);
+	$oUserCalendarSettings = $oApiUsersManager->getCalUser($iUserId);
+
+	$oP8User->IsDisabled = $oAccount->IsDisabled;
+
+	//Common settings
+	$oP8User->Language = $oP7User->DefaultLanguage;
+	$oP8User->{'CoreWebclient::AutoRefreshIntervalMinutes'} = $oP7User->AutoCheckMailInterval;
+	$oP8User->TimeFormat = $oP7User->DefaultTimeFormat;
+	$oP8User->DateFormat = $oP7User->DefaultDateFormat;
+	$oP8User->DesktopNotifications = $oP7User->DesktopNotifications;
+	
+	$oP8User->{'MailWebclient::MailsPerPage'} = $oP7User->MailsPerPage;
+	$oP8User->{'MailWebclient::SaveRepliesToCurrFolder'} = $oP7User->SaveRepliedMessagesToCurrentFolder;
+	
+	$oP8User->{'Contacts::ContactsPerPage'} = $oP7User->ContactsPerPage;
+
+	//Calendar
+	$oP8User->{'Calendar::HighlightWorkingHours'} = $oUserCalendarSettings->ShowWorkDay;
+	$oP8User->{'Calendar::HighlightWorkingDays'} = $oUserCalendarSettings->ShowWeekEnds;
+	$oP8User->{'Calendar::WorkdayStarts'} = $oUserCalendarSettings->WorkDayStarts;
+	$oP8User->{'Calendar::WorkdayEnds'} = $oUserCalendarSettings->WorkDayEnds;
+	$oP8User->{'Calendar::WeekStartsOn'} = $oUserCalendarSettings->WeekStartsOn;
+	$oP8User->{'Calendar::DefaultTab'} = $oUserCalendarSettings->DefaultTab;
+
+	return $oCoreDecorator->UpdateUserObject($oP8User);
+}
 
 function ContactP7ToP8(\CContact $oContact)
 {
