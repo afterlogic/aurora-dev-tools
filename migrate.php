@@ -37,6 +37,7 @@ class P7ToP8Migration
 	public $bFindDomain = false;
 	public $bFindUser = false;
 	public $bFindAccount = false;
+	public $bFindIdentity = false;
 	public $bFindContact = false;
 
 	public function Init()
@@ -75,6 +76,8 @@ class P7ToP8Migration
 				'CurUserId' => 0,
 				'CurAccountId' => 0,
 				'NewAccountId' => 0,
+				'CurIdentitiesId' => 0,
+				'NewIdentitiesId' => 0,
 				'CurContactId' => 0
 			];
 		}
@@ -179,6 +182,8 @@ class P7ToP8Migration
 								$this->oMigrationLog->CurUserId = $iP7UserId;
 								$this->oMigrationLog->CurAccountId = 0;
 								$this->oMigrationLog->NewAccountId = 0;
+								$this->oMigrationLog->CurIdentitiesId = 0;
+								$this->oMigrationLog->NewIdentitiesId = 0;
 								file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 							}
 						}
@@ -193,7 +198,7 @@ class P7ToP8Migration
 						$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
 						foreach ($aAccountsId as $iP7AccountId)
 						{
-							if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $this->oMigrationLog->CurAccountId < $iP7AccountId)
+							if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $iP7AccountId < $this->oMigrationLog->CurAccountId)
 							{
 								//skip Account if already done
 								\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -232,17 +237,13 @@ class P7ToP8Migration
 							{
 								$this->bFindContact = true;
 							}
-							$oP7Contact = $this->oP7ApiContactsManager->getContactById($oListItem->IdUser, $oListItem->Id);
-							$aContactOptions = $this->ContactP7ToP8($oP7Contact);
-							if (!$contactResult = $this->oP8ContactsDecorator->CreateContact($aContactOptions, $oP8User->EntityId))
+							if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
 							{
 								\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 								exit("Error during migration process");
 							}
 							else
 							{
-								$this->oMigrationLog->CurContactId = $oListItem->Id;
-								file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 								$iContactsCount++;
 							}
 						}
@@ -334,7 +335,7 @@ class P7ToP8Migration
 
 		if ($this->oMigrationLog->CurAccountId === $iP7AccountId)
 		{
-			$oP8Account = $this->oP8MailModuleDecorator->GetAccount($this->oMigrationLog->NewAccountId);
+			$oP8Account = $this->oP8MailModule->oApiAccountsManager->getAccountById($this->oMigrationLog->NewAccountId);
 		}
 		else
 		{
@@ -346,6 +347,8 @@ class P7ToP8Migration
 				$oP7Account->IncomingMailPassword,
 				$aServer
 			);
+			$this->oMigrationLog->CurIdentitiesId = 0;
+			$this->oMigrationLog->NewIdentitiesId = 0;
 		}
 
 		if ($oP8Account)
@@ -376,26 +379,43 @@ class P7ToP8Migration
 		{
 			foreach ($aAccountIdentities as $oP7Identity)
 			{
+				if (!$this->bFindIdentity && $this->oMigrationLog->CurIdentitiesId !== 0 && $oP7Identity->IdIdentity < $this->oMigrationLog->CurIdentitiesId)
+				{
+					//skip Identity if already done
+					\Aurora\System\Api::Log("Skip Identity " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					continue;
+				}
+				else
+				{
+					$this->bFindIdentity = true;
+				}
 				if ($oP7Identity instanceof \CIdentity)
 				{
-					$iEntityId = $this->oP8MailModuleDecorator->CreateIdentity(
-						$oP8Account->IdUser,
-						$oP8Account->EntityId,
-						$oP7Identity->FriendlyName,
-						$oP7Identity->Email
-					);
-					if (!$iEntityId)
+					if ($oP7Identity->IdIdentity === $this->oMigrationLog->CurIdentitiesId)
+					{
+						$iP8EntityId = $this->oMigrationLog->NewIdentitiesId;
+					}
+					else
+					{
+						$iP8EntityId = $this->oP8MailModuleDecorator->CreateIdentity(
+							$oP8Account->IdUser,
+							$oP8Account->EntityId,
+							$oP7Identity->FriendlyName,
+							$oP7Identity->Email
+						);
+					}
+					if (!$iP8EntityId)
 					{
 						\Aurora\System\Api::Log("Error while Identity creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						return false;
 					}
-//					if ($oP7Identity->IdAccount==104 && $oP7Identity->IdIdentity==3)
-//					{
-//						exit("3453453465463758");
-//					}
+					$this->oMigrationLog->CurIdentitiesId = $oP7Identity->IdIdentity;
+					$this->oMigrationLog->NewIdentitiesId = $iP8EntityId;
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+
 					if (isset($oP7Identity->UseSignature) && isset($oP7Identity->Signature))
 					{
-						$bResult = !!$this->oP8MailModule->oApiIdentitiesManager->updateIdentitySignature($iEntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
+						$bResult = !!$this->oP8MailModule->oApiIdentitiesManager->updateIdentitySignature($iP8EntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
 						if (!$bResult)
 						{
 							\Aurora\System\Api::Log("Error while Signature creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -412,9 +432,10 @@ class P7ToP8Migration
 		return $bResult;
 	}
 
-	public function ContactP7ToP8(\CContact $oContact)
+	public function ContactP7ToP8($iP7UserId, $iP7ContactId, \Aurora\Modules\Core\Classes\User $oP8User)
 	{
-		$aResult = [];
+		$aResult = false;
+		$aContactOptions = [];
 		$aObgectFieldsConformity = [
 			"PrimaryEmail" => "PrimaryEmail",
 			"FullName" => "FullName",
@@ -456,11 +477,23 @@ class P7ToP8Migration
 			"GroupUUIDs" => "GroupsIds"
 		];
 
-		foreach ($aObgectFieldsConformity as $sPropertyNameP8 => $sPropertyNameP7)
+		$oP7Contact = $this->oP7ApiContactsManager->getContactById($iP7UserId, $iP7ContactId);
+		if (!$oP7Contact instanceof \CContact)
 		{
-			$aResult[$sPropertyNameP8] = $oContact->$sPropertyNameP7;
+			return $aResult;
 		}
 
+		foreach ($aObgectFieldsConformity as $sPropertyNameP8 => $sPropertyNameP7)
+		{
+			$aContactOptions[$sPropertyNameP8] = $oP7Contact->$sPropertyNameP7;
+		}
+
+		if ($this->oP8ContactsDecorator->CreateContact($aContactOptions, $oP8User->EntityId))
+		{
+			$this->oMigrationLog->CurContactId = $iP7ContactId;
+			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+			$aResult = true;
+		}
 		return $aResult;
 	}
 
@@ -503,3 +536,4 @@ class P7ToP8Migration
 
 $oMigration = new P7ToP8Migration();
 $oMigration->Start();
+exit("Done");
