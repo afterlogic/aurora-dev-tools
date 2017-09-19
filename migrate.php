@@ -24,11 +24,13 @@ class P7ToP8Migration
 	public $oP7ApiUsersManager = null;
 	public $oP7ApiContactsManagerFrom = null;
 	public $oP7ApiContactsManager = null;
+	public $oP7ApiSocial = null;
 
 	public $oP8ContactsDecorator = null;
 	public $oP8CoreDecorator = null;
 	public $oP8MailModule = null;
 	public $oP8MailModuleDecorator = null;
+	public $oP8OAuthIntegratorWebclientModule = null;
 
 	public $sMigrationLogFile = null;
 	public $oMigrationLog = null;
@@ -39,6 +41,7 @@ class P7ToP8Migration
 	public $bFindAccount = false;
 	public $bFindIdentity = false;
 	public $bFindContact = false;
+	public $bFindSocial = false;
 
 	public function Init()
 	{
@@ -50,12 +53,15 @@ class P7ToP8Migration
 		$this->oP7ApiContactsManagerFrom = \CApi::Manager('contactsmain', 'db');
 		/* @var $P7ApiContacts CApiContactsManager */
 		$this->oP7ApiContactsManager = \CApi::Manager('contacts');
+		/* @var $oApiSocial \CApiSocialManager */
+		$this->oP7ApiSocial = \CApi::Manager('social');
 
 		$this->oP8ContactsDecorator = \Aurora\Modules\Contacts\Module::Decorator();
 		$this->oP8CoreDecorator = \Aurora\Modules\Core\Module::Decorator();
 		$oP8MailModule = \Aurora\System\Api::GetModule("Mail");
 		$this->oP8MailModule = $oP8MailModule;
 		$this->oP8MailModuleDecorator = $oP8MailModule::Decorator();
+		$this->oP8OAuthIntegratorWebclientModule = \Aurora\System\Api::GetModule("OAuthIntegratorWebclient");
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
@@ -78,7 +84,9 @@ class P7ToP8Migration
 				'NewAccountId' => 0,
 				'CurIdentitiesId' => 0,
 				'NewIdentitiesId' => 0,
-				'CurContactId' => 0
+				'CurContactId' => 0,
+				'CurSocialAccountId' => 0,
+				'NewSocialAccountId' => 0,
 			];
 		}
 	}
@@ -184,6 +192,8 @@ class P7ToP8Migration
 								$this->oMigrationLog->NewAccountId = 0;
 								$this->oMigrationLog->CurIdentitiesId = 0;
 								$this->oMigrationLog->NewIdentitiesId = 0;
+								$this->oMigrationLog->CurSocialAccountId = 0;
+								$this->oMigrationLog->NewSocialAccountId = 0;
 								file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 							}
 						}
@@ -211,6 +221,12 @@ class P7ToP8Migration
 							if (!$this->AccountP7ToP8($iP7AccountId, $oP8User, $oServer))
 							{
 								\Aurora\System\Api::Log("Error while User accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+								exit("Error during migration process");
+							}
+							//SOCIAL ACCOUNTS
+							if (!$this->SocialAccountsP7ToP8($iP7AccountId, $oP8User, $oServer))
+							{
+								\Aurora\System\Api::Log("Error while User social accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 								exit("Error during migration process");
 							}
 						}
@@ -371,6 +387,53 @@ class P7ToP8Migration
 		return $bResult;
 	}
 
+	public function SocialAccountsP7ToP8($iP7AccountId, \Aurora\Modules\Core\Classes\User $oP8User, $oServer)
+	{
+		$aSocials = $this->oP7ApiSocial->getSocials($iP7AccountId);
+		if (is_array($aSocials))
+		{
+			foreach ($aSocials as $oSocial)
+			{
+				if (!$this->bFindSocial && $this->oMigrationLog->CurSocialAccountId !== 0 && $oSocial->Id <= $this->oMigrationLog->CurSocialAccountId)
+				{
+					//skip Social Account if already done
+					\Aurora\System\Api::Log("Skip Social Account: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					continue;
+				}
+				else
+				{
+					$this->bFindSocial = true;
+				}
+
+				$oP8SocialAccount = new \Aurora\Modules\OAuthIntegratorWebclient\Classes\Account();
+				$oP8SocialAccount->IdUser = $oP8User->EntityId;
+				$oP8SocialAccount->IdSocial = $oSocial->IdSocial;
+				$oP8SocialAccount->Type = $oSocial->TypeStr;
+				$oP8SocialAccount->Name = $oSocial->Name;
+				$oP8SocialAccount->Email = $oSocial->Email;
+				$oP8SocialAccount->RefreshToken = $oSocial->RefreshToken;
+				$oP8SocialAccount->Scopes = $oSocial->Scopes;
+				$oP8SocialAccount->Disabled = $oSocial->Disabled;
+
+				if (!$this->oP8OAuthIntegratorWebclientModule->oManager->createAccount($oP8SocialAccount))
+				{
+					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Error during migration process");
+				}
+
+				$oP8NewSocialAccount = $this->oP8OAuthIntegratorWebclientModule->oManager->getAccount($oP8User->EntityId, $oSocial->TypeStr);
+				if (!$oP8NewSocialAccount && !$oP8NewSocialAccount instanceof \Aurora\Modules\OAuthIntegratorWebclient\Classes\Account)
+				{
+					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Error during migration process");
+				}
+				$this->oMigrationLog->CurSocialAccountId = $oSocial->Id;
+				$this->oMigrationLog->NewSocialAccountId = $oP8NewSocialAccount->EntityId;
+				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+			}
+		}
+		return true;
+	}
 	public function IdentitiesP7ToP8($iP7AccountId, $oP8Account)
 	{
 		$bResult = false;
