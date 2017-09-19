@@ -53,8 +53,10 @@ class P7ToP8Migration
 		$this->oP7ApiContactsManagerFrom = \CApi::Manager('contactsmain', 'db');
 		/* @var $P7ApiContacts CApiContactsManager */
 		$this->oP7ApiContactsManager = \CApi::Manager('contacts');
-		/* @var $oApiSocial \CApiSocialManager */
+		/* @var $oP7ApiSocial \CApiSocialManager */
 		$this->oP7ApiSocial = \CApi::Manager('social');
+		/* @var $oP7ApiMail \CApiMailManager */
+		$this->oP7ApiMail = \CApi::Manager('mail');
 
 		$this->oP8ContactsDecorator = \Aurora\Modules\Contacts\Module::Decorator();
 		$this->oP8CoreDecorator = \Aurora\Modules\Core\Module::Decorator();
@@ -369,13 +371,22 @@ class P7ToP8Migration
 
 		if ($oP8Account)
 		{
+			$sFolderOrders = '';
+			$aFolderOrders = $this->oP7ApiMail->getFoldersOrder($oP7Account);
+			if (is_array($aFolderOrders) && count($aFolderOrders) > 0)
+			{
+				$sFolderOrders = json_encode($aFolderOrders);
+			}
+
 			$oP8Account->IsDisabled = $oP7Account->IsDisabled;
 			$oP8Account->UseToAuthorize = !$oP7Account->IsInternal;
 			$oP8Account->Signature = $oP7Account->Signature;
 			$oP8Account->UseSignature = $oP7Account->SignatureOptions;
 			$oP8Account->UseThreading = $oServer->EnableThreading;
+			$oP8Account->FoldersOrder = $sFolderOrders;
+
 			$bResult = $this->oP8MailModule->oApiAccountsManager->updateAccount($oP8Account);
-			
+
 			$this->oMigrationLog->CurAccountId = $iP7AccountId;
 			$this->oMigrationLog->NewAccountId = $oP8Account->EntityId;
 			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
