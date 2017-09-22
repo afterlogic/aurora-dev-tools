@@ -1,22 +1,31 @@
 #!/bin/bash
 
-## update product repository
-echo "Aurora Platform";
-cd ../
-git fetch --all;
-git reset --hard origin/master;
-echo "";
+read -p "Update Framework and Dev Tools [no]: " updateFramework
+if [ "$updateFramework" == "" ]; then
+	updateFramework="no"
+fi
 
-## update framework repository
-cd ./system
-echo "Aurora Framework";
-git fetch --all;
-git reset --hard origin/master;
-cd ../
-echo "";
+if [ "$updateFramework" != "no" ]; then
+	## update product repository
+	echo "Aurora Platform";
+	cd ../
+	git fetch --all;
+	git reset --hard origin/master;
+	echo "";
+
+	## update framework repository
+	cd ./system
+	echo "Aurora Framework";
+	git fetch --all;
+	git reset --hard origin/master;
+	cd ../
+	echo "";
+	
+	cd ./dev
+fi
 
 ## update module repositories
-cd ./modules
+cd ../modules
 echo "Aurora Modules";
 echo "";
 for dir in $(find . -name ".git");
