@@ -20,6 +20,11 @@ class P7ToP8Migration
 {
 	const ITEMS_PER_PAGE = 20;
 
+	public $oP7PDO = false;
+	public $oP7Settings = false;
+	public $oP8PDO = false;
+	public $oP8Settings = false;
+
 	public $oP7ApiDomainsManager = null;
 	public $oP7ApiUsersManager = null;
 	public $oP7ApiContactsManagerFrom = null;
@@ -45,6 +50,11 @@ class P7ToP8Migration
 
 	public function Init()
 	{
+		$this->oP7PDO = \CApi::GetPDO();
+		$this->oP7Settings = \CApi::GetSettings();
+		$this->oP8PDO = \Aurora\System\Api::GetPDO();
+		$this->oP8Settings = \Aurora\System\Api::GetSettings();
+
 		/* @var $oP7ApiDomainsManager CApiDomainsManager */
 		$this->oP7ApiDomainsManager = \CApi::Manager('domains');
 		/* @var $oP7ApiUsersManager CApiUsersManager */
@@ -58,8 +68,8 @@ class P7ToP8Migration
 		/* @var $oP7ApiMail \CApiMailManager */
 		$this->oP7ApiMail = \CApi::Manager('mail');
 
-		$this->oP8ContactsDecorator = \Aurora\Modules\Contacts\Module::Decorator();
-		$this->oP8CoreDecorator = \Aurora\Modules\Core\Module::Decorator();
+		$this->oP8ContactsDecorator = \Aurora\System\Api::GetModuleDecorator('Contacts');
+		$this->oP8CoreDecorator = \Aurora\System\Api::GetModuleDecorator('Core');
 		$oP8MailModule = \Aurora\System\Api::GetModule("Mail");
 		$this->oP8MailModule = $oP8MailModule;
 		$this->oP8MailModuleDecorator = $oP8MailModule::Decorator();
@@ -67,7 +77,7 @@ class P7ToP8Migration
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
-			exit("Error during migration process");
+			exit("Error during migration process. For more details see log-file.");
 		}
 
 		$this->sMigrationLogFile = \Aurora\System\Api::DataPath() . '/migration';
@@ -79,6 +89,7 @@ class P7ToP8Migration
 		if (!$this->oMigrationLog)
 		{
 			$this->oMigrationLog = (object) [
+				'DBUpgraded' => 0,
 				'CurDomainId' => -1,
 				'CurUsersPage' => 1,
 				'CurUserId' => 0,
@@ -96,12 +107,24 @@ class P7ToP8Migration
 	public function Start()
 	{
 		$this->Init();
+		if (!$this->oMigrationLog->DBUpgraded)
+		{
+			if (!$this->UpgrateDB())
+			{
+				exit("Error during migration process. For more details see log-file.");
+			}
+			$this->oMigrationLog->DBUpgraded = 1;
+			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+		}
+
 		if ($this->oMigrationLog->CurDomainId !== -1 && $this->oMigrationLog->CurUserId > 0)
 		{
+			echo "Continue migration from Domain: {$this->oMigrationLog->CurDomainId} UserId: {$this->oMigrationLog->CurUserId}\n";
 			\Aurora\System\Api::Log("Continue migration from Domain: {$this->oMigrationLog->CurDomainId} UserId: {$this->oMigrationLog->CurUserId}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		else
 		{
+			echo "Start migration\n";
 			\Aurora\System\Api::Log("Start migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		//DOMAINS
@@ -133,13 +156,13 @@ class P7ToP8Migration
 				if (!$iServerId)
 				{
 					\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process");
+					exit("Error during migration process. For more details see log-file.");
 				}
 				$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 				if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
 				{
 					\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process");
+					exit("Error during migration process. For more details see log-file.");
 				}
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 			}
@@ -179,32 +202,36 @@ class P7ToP8Migration
 							if (!$this->oP8CoreDecorator->CreateUser(0, $sP7UserEmail, \Aurora\System\Enums\UserRole::NormalUser, false))
 							{
 								\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process");
+								exit("Error during migration process. For more details see log-file.");
 							}
-							else
+							$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
+							if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
 							{
-								$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
-								if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
-								{
-									\Aurora\System\Api::Log("User not found: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-									exit("Error during migration process");
-								}
-								$this->oMigrationLog->CurUserId = $iP7UserId;
-								$this->oMigrationLog->CurAccountId = 0;
-								$this->oMigrationLog->NewAccountId = 0;
-								$this->oMigrationLog->CurIdentitiesId = 0;
-								$this->oMigrationLog->NewIdentitiesId = 0;
-								$this->oMigrationLog->CurSocialAccountId = 0;
-								$this->oMigrationLog->NewSocialAccountId = 0;
-								file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+								\Aurora\System\Api::Log("User not found: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+								exit("Error during migration process. For more details see log-file.");
 							}
+
+							$this->oMigrationLog->CurUserId = $iP7UserId;
+							$this->oMigrationLog->CurAccountId = 0;
+							$this->oMigrationLog->NewAccountId = 0;
+							$this->oMigrationLog->CurIdentitiesId = 0;
+							$this->oMigrationLog->NewIdentitiesId = 0;
+							$this->oMigrationLog->CurSocialAccountId = 0;
+							$this->oMigrationLog->NewSocialAccountId = 0;
+							file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 						}
 						if (!$this->UserP7ToP8($iP7UserId, $oP8User))
 						{
 							\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							exit("Error during migration process");
+							exit("Error during migration process. For more details see log-file.");
 						}
 						$this->iUserCount++;
+						//DAV Calendars
+						if (!$this->UpgradeDAVCalendar($oP8User))
+						{
+							\Aurora\System\Api::Log("Error while User calendars creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							exit("Error during migration process. For more details see log-file.");
+						}
 
 						//ACCOUNTS
 						$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
@@ -223,13 +250,13 @@ class P7ToP8Migration
 							if (!$this->AccountP7ToP8($iP7AccountId, $oP8User, $oServer))
 							{
 								\Aurora\System\Api::Log("Error while User accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process");
+								exit("Error during migration process. For more details see log-file.");
 							}
 							//SOCIAL ACCOUNTS
 							if (!$this->SocialAccountsP7ToP8($iP7AccountId, $oP8User, $oServer))
 							{
 								\Aurora\System\Api::Log("Error while User social accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process");
+								exit("Error during migration process. For more details see log-file.");
 							}
 						}
 
@@ -258,7 +285,7 @@ class P7ToP8Migration
 							if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
 							{
 								\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process");
+								exit("Error during migration process. For more details see log-file.");
 							}
 							else
 							{
@@ -344,7 +371,7 @@ class P7ToP8Migration
 			if (!$iServerId)
 			{
 				\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->IncomingMailServer, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				exit("Error during migration process");
+				exit("Error during migration process. For more details see log-file.");
 			}
 			$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 		}
@@ -429,14 +456,14 @@ class P7ToP8Migration
 				if (!$this->oP8OAuthIntegratorWebclientModule->oManager->createAccount($oP8SocialAccount))
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process");
+					exit("Error during migration process. For more details see log-file.");
 				}
 
 				$oP8NewSocialAccount = $this->oP8OAuthIntegratorWebclientModule->oManager->getAccount($oP8User->EntityId, $oSocial->TypeStr);
 				if (!$oP8NewSocialAccount && !$oP8NewSocialAccount instanceof \Aurora\Modules\OAuthIntegratorWebclient\Classes\Account)
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process");
+					exit("Error during migration process. For more details see log-file.");
 				}
 				$this->oMigrationLog->CurSocialAccountId = $oSocial->Id;
 				$this->oMigrationLog->NewSocialAccountId = $oP8NewSocialAccount->EntityId;
@@ -605,6 +632,201 @@ class P7ToP8Migration
 			0 //TenantId
 		);
 		return $iServerId ? $iServerId : false;
+	}
+
+	public function UpgrateDB()
+	{
+		$oP7DBLogin = $this->oP7Settings->GetConf('Common/DBLogin');
+		$oP7DBPassword = $this->oP7Settings->GetConf('Common/DBPassword');
+		$oP7DBName = $this->oP7Settings->GetConf('Common/DBName');
+		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$oP7DBHost = $this->oP7Settings->GetConf('Common/DBHost');
+
+		$oP8DBLogin = $this->oP8Settings->GetConf('DBLogin');
+		$oP8DBPassword = $this->oP8Settings->GetConf('DBPassword');
+		$oP8DBName = $this->oP8Settings->GetConf('DBName');
+		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
+		$oP8DBHost = $this->oP8Settings->GetConf('DBHost');
+
+		//Delete tables in P8
+		$sDelTableQuery = "DROP TABLE IF EXISTS `{$oP8DBPrefix}adav_addressbookchanges`,
+			`{$oP8DBPrefix}adav_addressbooks`,
+			`{$oP8DBPrefix}adav_cache`,
+			`{$oP8DBPrefix}adav_calendarchanges`,
+			`{$oP8DBPrefix}adav_calendarobjects`,
+			`{$oP8DBPrefix}adav_calendars`,
+			`{$oP8DBPrefix}adav_calendarshares`,
+			`{$oP8DBPrefix}adav_calendarsubscriptions`,
+			`{$oP8DBPrefix}adav_cards`,
+			`{$oP8DBPrefix}adav_groupmembers`,
+			`{$oP8DBPrefix}adav_locks`,
+			`{$oP8DBPrefix}adav_principals`,
+			`{$oP8DBPrefix}adav_propertystorage`,
+			`{$oP8DBPrefix}adav_reminders`,
+			`{$oP8DBPrefix}adav_schedulingobjects`";
+
+		try
+		{
+			$this->oP8PDO->exec($sDelTableQuery);
+		}
+		catch(Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		\Aurora\System\Api::Log("Delete tables in P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		 echo "Remove tables\n";
+
+		//Move tables from P7 DB to P8  DB
+		$aOutput = null;
+		$iStatus = null;
+		$sMoveTablesFromP7ToP8 = "mysqldump -u{$oP7DBLogin} " . ($oP7DBPassword ? "-p{$oP7DBPassword}" : "") . " -h{$oP7DBHost} {$oP7DBName} --tables "
+			. $oP7DBPrefix . "adav_addressbooks "
+			. $oP7DBPrefix . "adav_cache "
+			. $oP7DBPrefix . "adav_calendarobjects "
+			. $oP7DBPrefix . "adav_calendars "
+			. $oP7DBPrefix . "adav_calendarshares "
+			. $oP7DBPrefix . "adav_cards "
+			. $oP7DBPrefix . "adav_groupmembers "
+			. $oP7DBPrefix . "adav_locks "
+			. $oP7DBPrefix . "adav_principals "
+			. $oP7DBPrefix . "adav_reminders "
+			."| mysql -u{$oP8DBLogin} " . ($oP8DBPassword ? "-p{$oP8DBPassword}" : "") . " -h{$oP8DBHost}  {$oP8DBName}";
+
+		exec($sMoveTablesFromP7ToP8, $aOutput, $iStatus);
+
+		if ($iStatus !== 0)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. Failed process of moving tables from p7 DB to p8 DB.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		\Aurora\System\Api::Log("Move tables from p7 DB to p8  DB: " . $sMoveTablesFromP7ToP8, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		echo "Move tables from p7 DB to p8  DB";
+		echo "\n-----------------------------------------------\n";
+		//Rename tables before upgrading
+		$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
+			{$oP7DBPrefix}adav_cache TO cache,
+			{$oP7DBPrefix}adav_calendarobjects TO calendarobjects,
+			{$oP7DBPrefix}adav_calendars TO calendars,
+			{$oP7DBPrefix}adav_calendarshares TO calendarshares,
+			{$oP7DBPrefix}adav_cards TO cards,
+			{$oP7DBPrefix}adav_groupmembers TO groupmembers,
+			{$oP7DBPrefix}adav_locks TO locks,
+			{$oP7DBPrefix}adav_principals TO principals,
+			{$oP7DBPrefix}adav_reminders TO reminders";
+
+		try
+		{
+			$this->oP8PDO->exec($sRenameTablesQuery);
+		}
+		catch(Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+
+		//Upgrade sabredav data from 1.8 to 3.0 version
+		unset($aOutput);
+		unset($iStatus);
+		$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+		exec($sUpgrade18To20, $aOutput, $iStatus);
+		if ($iStatus !== 0)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		echo  implode("\n", $aOutput);
+		echo "\n-----------------------------------------------\n";
+
+		unset($aOutput);
+		unset($iStatus);
+		$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+		exec($sUpgrade20To21, $aOutput, $iStatus);
+		if ($iStatus !== 0)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		echo  implode("\n", $aOutput);
+		echo "\n-----------------------------------------------\n";
+
+		unset($aOutput);
+		unset($iStatus);
+		$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+		exec($sUpgrade21To30, $aOutput, $iStatus);
+		if ($iStatus !== 0)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		echo  implode("\n", $aOutput);
+		echo "\n-----------------------------------------------\n";
+
+		//Add prefixes
+		$sPrefix = $oP8DBPrefix . "adav_";
+		$sAddPrefixQuery = "RENAME TABLE addressbooks TO {$sPrefix}addressbooks,
+			cache TO {$sPrefix}cache,
+			calendarobjects TO {$sPrefix}calendarobjects,
+			calendars TO {$sPrefix}calendars,
+			calendarshares TO {$sPrefix}calendarshares,
+			cards TO {$sPrefix}cards,
+			groupmembers TO {$sPrefix}groupmembers,
+			locks TO {$sPrefix}locks,
+			principals TO {$sPrefix}principals,
+			reminders TO {$sPrefix}reminders,
+			calendarchanges TO {$sPrefix}calendarchanges,
+			calendarsubscriptions TO {$sPrefix}calendarsubscriptions,
+			propertystorage TO {$sPrefix}propertystorage,
+			schedulingobjects TO {$sPrefix}schedulingobjects,
+			addressbookchanges TO {$sPrefix}addressbookchanges";
+
+		try
+		{
+			$this->oP8PDO->exec($sAddPrefixQuery);
+		}
+		catch(Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+
+		//Remove DAV contacts
+		$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
+		try
+		{
+			$this->oP8PDO->exec($sTruncateQuery);
+		}
+		catch(Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+
+		echo  "DB upgraded\n";
+		return true;
+	}
+
+	public function UpgradeDAVCalendar(\Aurora\Modules\Core\Classes\User $oP8User)
+	{
+		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
+		try
+		{
+			$sCalendarUpdateQuery = "UPDATE `{$oP8DBPrefix}adav_calendars` 
+					SET `principaluri`= 'principals/{$oP8User->UUID}'
+					WHERE `principaluri` = 'principals/{$oP8User->PublicId}'";
+			$stmt = $this->oP8PDO->prepare($sCalendarUpdateQuery);
+			$stmt->execute();
+			$stmt->closeCursor();
+		}
+		catch(Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during calendars migration process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+		return true;
 	}
 }
 
