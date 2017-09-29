@@ -774,39 +774,43 @@ class P7ToP8Migration
 		echo  implode("\n", $aOutput);
 		echo "\n-----------------------------------------------\n";
 
-		//Add prefixes
-		$sPrefix = $oP8DBPrefix . "adav_";
-		$sAddPrefixQuery = "RENAME TABLE addressbooks TO {$sPrefix}addressbooks,
-			cache TO {$sPrefix}cache,
-			calendarobjects TO {$sPrefix}calendarobjects,
-			calendars TO {$sPrefix}calendars,
-			calendarshares TO {$sPrefix}calendarshares,
-			cards TO {$sPrefix}cards,
-			groupmembers TO {$sPrefix}groupmembers,
-			locks TO {$sPrefix}locks,
-			principals TO {$sPrefix}principals,
-			reminders TO {$sPrefix}reminders,
-			calendarchanges TO {$sPrefix}calendarchanges,
-			calendarsubscriptions TO {$sPrefix}calendarsubscriptions,
-			propertystorage TO {$sPrefix}propertystorage,
-			schedulingobjects TO {$sPrefix}schedulingobjects,
-			addressbookchanges TO {$sPrefix}addressbookchanges";
-
 		try
 		{
+			//Add prefixes
+			$sPrefix = $oP8DBPrefix . "adav_";
+			$sAddPrefixQuery = "RENAME TABLE addressbooks TO {$sPrefix}addressbooks,
+				cache TO {$sPrefix}cache,
+				calendarobjects TO {$sPrefix}calendarobjects,
+				calendars TO {$sPrefix}calendars,
+				calendarshares TO {$sPrefix}calendarshares,
+				cards TO {$sPrefix}cards,
+				groupmembers TO {$sPrefix}groupmembers,
+				locks TO {$sPrefix}locks,
+				principals TO {$sPrefix}principals,
+				reminders TO {$sPrefix}reminders,
+				calendarchanges TO {$sPrefix}calendarchanges,
+				calendarsubscriptions TO {$sPrefix}calendarsubscriptions,
+				propertystorage TO {$sPrefix}propertystorage,
+				schedulingobjects TO {$sPrefix}schedulingobjects,
+				addressbookchanges TO {$sPrefix}addressbookchanges";
 			$this->oP8PDO->exec($sAddPrefixQuery);
-		}
-		catch(Exception $e)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
 
-		//Remove DAV contacts
-		$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
-		try
-		{
+			//Remove DAV contacts
+			$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
 			$this->oP8PDO->exec($sTruncateQuery);
+
+			//Drop backup tables
+			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%'";
+			$stmt = $this->oP8PDO->prepare($sGetBackupTablesNamesQuery);
+			$stmt->execute();
+			$aBackupTablesNames = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+
+			if (is_array($aBackupTablesNames) && count($aBackupTablesNames) > 0)
+			{
+				$sDropBackupTablesQuery = "DROP TABLE IF EXISTS " . implode(", ", $aBackupTablesNames);
+				$this->oP8PDO->exec($sDropBackupTablesQuery);
+				\Aurora\System\Api::Log("Drop backup tables: " .  $sDropBackupTablesQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			}
 		}
 		catch(Exception $e)
 		{
@@ -864,15 +868,6 @@ class P7ToP8Migration
 						continue;
 					}
 					$sDestinationPath = $sDestination . "/" . $oP8User->UUID;
-					//if already exists
-					if (is_dir($sDestinationPath))
-					{
-						if (!@rmdir($sDestinationPath))
-						{
-							\Aurora\System\Api::Log("Error during removing folder: " .  $sDestinationPath, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							exit("Error during migration process. For more details see log-file.");
-						}
-					}
 					$this->CopyDir($sPathDir, $sDestinationPath);
 					continue;
 				}
