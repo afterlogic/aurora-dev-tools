@@ -100,13 +100,17 @@ class P7ToP8Migration
 				'CurContactId' => 0,
 				'CurSocialAccountId' => 0,
 				'NewSocialAccountId' => 0,
+				'UsersMigrated' => 0
 			];
 		}
 	}
 
 	public function Start()
 	{
-		$this->Init();
+		if ($this->oMigrationLog->UsersMigrated)
+		{
+			return true;
+		}
 		if (!$this->oMigrationLog->DBUpgraded)
 		{
 			if (!$this->UpgrateDB())
@@ -124,8 +128,8 @@ class P7ToP8Migration
 		}
 		else
 		{
-			echo "Start migration\n";
-			\Aurora\System\Api::Log("Start migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			echo "Start users migration\n";
+			\Aurora\System\Api::Log("Start users migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		//DOMAINS
 		$aDomains = $this->oP7ApiDomainsManager->getFullDomainsList();
@@ -138,6 +142,7 @@ class P7ToP8Migration
 			{
 				//skip Domain if already done
 				\Aurora\System\Api::Log("Skip domain: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				echo "Skip domain: " . $sDomainName . "\n";
 				continue;
 			}
 			else
@@ -145,6 +150,7 @@ class P7ToP8Migration
 				$this->bFindDomain = true;
 				$this->oMigrationLog->CurDomainId = $iDomainId;
 				\Aurora\System\Api::Log("Process domain: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				echo "Process domain: " . $sDomainName . "\n";
 			}
 
 			$oServer = $iDomainId !== 0 ? $this->GetServerByName($sDomainName) : false;
@@ -299,7 +305,10 @@ class P7ToP8Migration
 			}
 			$this->oMigrationLog->CurUsersPage = 1;
 		}
-		\Aurora\System\Api::Log("Done. {$this->iUserCount} users processed", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		\Aurora\System\Api::Log("Users migrated. {$this->iUserCount} users processed", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		echo "Users migrated. {$this->iUserCount} users processed\n";
+		$this->oMigrationLog->UsersMigrated = 1;
+		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 	}
 
 	public function UserP7ToP8($iP7UserId, \Aurora\Modules\Core\Classes\User $oP8User)
@@ -828,8 +837,115 @@ class P7ToP8Migration
 		}
 		return true;
 	}
+
+	public function MigrateUserFiles()
+	{
+		echo  "Start moving files\n";
+		\Aurora\System\Api::Log("Start moving files", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$sSource = \CApi::DataPath() . "/files/private";
+		$sDestination = \Aurora\System\Api::DataPath() . "/files/private";
+
+		$oDirectory = dir($sSource);
+		if ($oDirectory)
+		{
+			while (false !== ($sRead = $oDirectory->read()))
+			{
+				if ('.' === $sRead || '..' === $sRead)
+				{
+					continue;
+				}
+
+				$sPathDir = $sSource.'/'.$sRead;
+				if (is_dir($sPathDir))
+				{
+					$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sRead);
+					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
+					{
+						continue;
+					}
+					$sDestinationPath = $sDestination . "/" . $oP8User->UUID;
+					//if already exists
+					if (is_dir($sDestinationPath))
+					{
+						if (!@rmdir($sDestinationPath))
+						{
+							\Aurora\System\Api::Log("Error during removing folder: " .  $sDestinationPath, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							exit("Error during migration process. For more details see log-file.");
+						}
+					}
+					$this->CopyDir($sPathDir, $sDestinationPath);
+					continue;
+				}
+			}
+			$oDirectory->close();
+		}
+		echo  "Files successfully moved\n";
+		\Aurora\System\Api::Log("Files successfully moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+	}
+
+	public function CopyDir($sSource, $sDestination)
+	{
+		if (\is_dir($sSource))
+		{
+			if (!\is_dir($sDestination))
+			{
+				\mkdir($sDestination);
+			}
+
+			$oDirectory = \dir($sSource);
+			if ($oDirectory)
+			{
+				while (false !== ($sRead = $oDirectory->read()))
+				{
+					if ('.' === $sRead || '..' === $sRead)
+					{
+						continue;
+					}
+
+					$sPathDir = $sSource.'/'.$sRead;
+					if (\is_dir($sPathDir))
+					{
+						$this->CopyDir($sPathDir, $sDestination.'/'.$sRead);
+						continue;
+					}
+
+					\copy($sPathDir, $sDestination.'/'.$sRead);
+					if ($sRead === ".sabredav")
+					{
+						$aFilesProperties = unserialize(@file_get_contents($sDestination.'/'.$sRead));
+						if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
+						{
+							$aFilesProperties = self::RenameFilesOwner($aFilesProperties);
+							@file_put_contents($sDestination.'/'.$sRead, serialize($aFilesProperties));
+						}
+					}
+				}
+
+				$oDirectory->close();
+			}
+		}
+	}
+
+	public function RenameFilesOwner($aFilesProperties)
+	{
+		foreach ($aFilesProperties as &$oItem)
+		{
+			if (isset($oItem["properties"]["Owner"]))
+			{
+				$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($oItem["properties"]["Owner"]);
+				if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
+				{
+					continue;
+				}
+				$oItem["properties"]["Owner"] = $oP8User->UUID;
+			}
+		}
+		return $aFilesProperties;
+	}
 }
 
 $oMigration = new P7ToP8Migration();
+$oMigration->Init();
 $oMigration->Start();
+$oMigration->MigrateUserFiles();
 exit("Done");
