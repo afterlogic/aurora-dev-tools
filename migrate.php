@@ -100,7 +100,8 @@ class P7ToP8Migration
 				'CurContactId' => 0,
 				'CurSocialAccountId' => 0,
 				'NewSocialAccountId' => 0,
-				'UsersMigrated' => 0
+				'UsersMigrated' => 0,
+				'FilesMigrated' => 0
 			];
 		}
 	}
@@ -113,7 +114,7 @@ class P7ToP8Migration
 		}
 		if (!$this->oMigrationLog->DBUpgraded)
 		{
-			if (!$this->UpgrateDB())
+			if (!$this->UpgradeDB())
 			{
 				exit("Error during migration process. For more details see log-file.");
 			}
@@ -643,7 +644,7 @@ class P7ToP8Migration
 		return $iServerId ? $iServerId : false;
 	}
 
-	public function UpgrateDB()
+	public function UpgradeDB()
 	{
 		$oP7DBLogin = $this->oP7Settings->GetConf('Common/DBLogin');
 		$oP7DBPassword = $this->oP7Settings->GetConf('Common/DBPassword');
@@ -846,6 +847,12 @@ class P7ToP8Migration
 	{
 		echo  "Start moving files\n";
 		\Aurora\System\Api::Log("Start moving files", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		if ($this->oMigrationLog->FilesMigrated)
+		{
+			echo  "Files already moved\n";
+			\Aurora\System\Api::Log("Files already moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return true;
+		}
 		$sSource = \CApi::DataPath() . "/files/private";
 		$sDestination = \Aurora\System\Api::DataPath() . "/files/private";
 
@@ -874,6 +881,8 @@ class P7ToP8Migration
 			}
 			$oDirectory->close();
 		}
+		$this->oMigrationLog->FilesMigrated = 1;
+		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 		echo  "Files successfully moved\n";
 		\Aurora\System\Api::Log("Files successfully moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
