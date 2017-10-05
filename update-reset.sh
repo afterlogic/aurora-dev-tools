@@ -1,31 +1,35 @@
 #!/bin/bash
 
-read -p "Update Framework and Dev Tools [no]: " updateFramework
-if [ "$updateFramework" == "" ]; then
-	updateFramework="no"
+read -p "Update Dev Tools [no]: " updateDevTools
+if [ "$updateDevTools" == "" ]; then
+	updateDevTools="no"
 fi
 
-if [ "$updateFramework" != "no" ]; then
-	## update product repository
-	echo "Aurora Platform";
-	cd ../
-	git fetch --all;
-	git reset --hard origin/master;
-	echo "";
+## update product repository
+echo "Aurora Platform";
+cd ../
+git fetch --all;
+git reset --hard origin/master;
+echo "";
 
-	## update framework repository
-	cd ./system
-	echo "Aurora Framework";
+## update framework repository
+cd ./system
+echo "Aurora Framework";
+git fetch --all;
+git reset --hard origin/master;
+cd ../
+echo "";
+
+if [ "$updateDevTools" != "no" ]; then
+	cd ./dev
+	echo "Aurora Dev Tools";
 	git fetch --all;
 	git reset --hard origin/master;
 	cd ../
-	echo "";
-	
-	cd ./dev
 fi
 
 ## update module repositories
-cd ../modules
+cd ./modules
 echo "Aurora Modules";
 echo "";
 for dir in $(find . -name ".git");
@@ -39,13 +43,7 @@ do
 done
 cd ../
 
-## update dev-tools repository
 cd ./dev
-echo "Aurora Dev Tools";
-git fetch --all;
-git reset --hard origin/master;
-echo "";
-
 chmod +x build.sh;
 chmod +x update.sh;
 chmod +x update-reset.sh;
