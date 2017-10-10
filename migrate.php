@@ -1,7 +1,6 @@
 <?php
-
-// remove the following line for real use
-exit('remove this line');
+ini_set("display_errors", "0");
+set_time_limit(0);
 
 $sP7ProductPath = "path to your p7 installation";
 
@@ -18,9 +17,8 @@ require_once "../system/autoload.php";
 
 class P7ToP8Migration
 {
-	const ITEMS_PER_PAGE = 20;
+	const ATTEMPTS_MAX_NUMBER = 3;
 
-	public $oP7PDO = false;
 	public $oP7Settings = false;
 	public $oP8PDO = false;
 	public $oP8Settings = false;
@@ -38,10 +36,12 @@ class P7ToP8Migration
 	public $oP8OAuthIntegratorWebclientModule = null;
 
 	public $sMigrationLogFile = null;
+	public $sUserListFile = null;
+	public $sMigratedUsersFile = null;
+	public $sNotMigratedUsersFile = null;
 	public $oMigrationLog = null;
 
 	public $iUserCount = 0;
-	public $bFindDomain = false;
 	public $bFindUser = false;
 	public $bFindAccount = false;
 	public $bFindIdentity = false;
@@ -50,7 +50,6 @@ class P7ToP8Migration
 
 	public function Init()
 	{
-		$this->oP7PDO = \CApi::GetPDO();
 		$this->oP7Settings = \CApi::GetSettings();
 		$this->oP8PDO = \Aurora\System\Api::GetPDO();
 		$this->oP8Settings = \Aurora\System\Api::GetSettings();
@@ -77,7 +76,7 @@ class P7ToP8Migration
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
-			exit("Error during migration process. For more details see log-file.");
+			$this->Redirect();
 		}
 
 		$this->sMigrationLogFile = \Aurora\System\Api::DataPath() . '/migration';
@@ -88,11 +87,16 @@ class P7ToP8Migration
 		
 		if (!$this->oMigrationLog)
 		{
+			/**
+			 * CurUserStatus
+			 * -1 - not processed
+			 * 0 - successfully migrated
+			 * n > 0 - number of attempts
+			 */
 			$this->oMigrationLog = (object) [
 				'DBUpgraded' => 0,
-				'CurDomainId' => -1,
-				'CurUsersPage' => 1,
-				'CurUserId' => 0,
+				'CurUserEmail' => '',
+				'CurUserStatus' => -1,
 				'CurAccountId' => 0,
 				'NewAccountId' => 0,
 				'CurIdentitiesId' => 0,
@@ -104,6 +108,10 @@ class P7ToP8Migration
 				'FilesMigrated' => 0
 			];
 		}
+
+		$this->sUserListFile = \Aurora\System\Api::DataPath() . "/user_list";
+		$this->sMigratedUsersFile = \Aurora\System\Api::DataPath() . '/migrated-users';
+		$this->sNotMigratedUsersFile = \Aurora\System\Api::DataPath() . '/not-migrated-users';
 	}
 
 	public function Start()
@@ -122,221 +130,227 @@ class P7ToP8Migration
 			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 		}
 
-		if ($this->oMigrationLog->CurDomainId !== -1 && $this->oMigrationLog->CurUserId > 0)
+		if ($this->oMigrationLog->CurUserEmail === '')
 		{
-			echo "Continue migration from Domain: {$this->oMigrationLog->CurDomainId} UserId: {$this->oMigrationLog->CurUserId}\n";
-			\Aurora\System\Api::Log("Continue migration from Domain: {$this->oMigrationLog->CurDomainId} UserId: {$this->oMigrationLog->CurUserId}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		}
-		else
-		{
-			echo "Start users migration\n";
+//			echo "Start users migration\n";
 			\Aurora\System\Api::Log("Start users migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
-		//DOMAINS
-		$aDomains = $this->oP7ApiDomainsManager->getFullDomainsList();
-		$aDomains[0] = array(false, 'Default'); // Default Domain
-
-		foreach ($aDomains as $iDomainId => $oDomainItem)
+		//USERS
+		if (!file_exists($this->sUserListFile))
 		{
-			$sDomainName = $oDomainItem[1];
-			if (!$this->bFindDomain && $this->oMigrationLog->CurDomainId !== -1 && $this->oMigrationLog->CurDomainId !== $iDomainId)
-			{
-				//skip Domain if already done
-				\Aurora\System\Api::Log("Skip domain: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				echo "Skip domain: " . $sDomainName . "\n";
-				continue;
-			}
-			else
-			{
-				$this->bFindDomain = true;
-				$this->oMigrationLog->CurDomainId = $iDomainId;
-				\Aurora\System\Api::Log("Process domain: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				echo "Process domain: " . $sDomainName . "\n";
-			}
+			\Aurora\System\Api::Log("Error: User list not found in " . $this->sUserListFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			exit("Error: User list not found in " . $this->sUserListFile);
+		}
 
-			$oServer = $iDomainId !== 0 ? $this->GetServerByName($sDomainName) : false;
-
-			if ($iDomainId !== 0 && !$oServer)
+		$rUserListHandle = @fopen($this->sUserListFile, "r");
+		if ($rUserListHandle)
+		{
+			$rMigratedUsersHandle = @fopen($this->sMigratedUsersFile, "a");
+			if (!$rMigratedUsersHandle)
 			{
-				//create server if not exists and not default
-				$iServerId = $this->DomainP7ToP8($this->oP7ApiDomainsManager->getDomainById($iDomainId));
-				if (!$iServerId)
+				\Aurora\System\Api::Log("Error: can't write in " . $this->sMigratedUsersFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				exit("Error: can't write in " . $this->sMigratedUsersFile);
+			}
+			
+			while (($sP7UserEmail = @fgets($rUserListHandle)) !== false)
+			{
+				$sP7UserEmail = \trim($sP7UserEmail);
+				if (!$this->bFindUser && $this->oMigrationLog->CurUserEmail !== '' && $sP7UserEmail !== $this->oMigrationLog->CurUserEmail)
 				{
-					\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process. For more details see log-file.");
+					//skip User
+					continue;
 				}
-				$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
-				if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
+				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus === 0)
 				{
-					\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process. For more details see log-file.");
+					//skip User if successfully migrated
+					$this->bFindUser = true;
+					continue;
 				}
-				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-			}
-
-			//USERS
-			$iUsersCount = $this->oP7ApiUsersManager->getUsersCountForDomain($iDomainId);
-			$iPageUserCount = ceil($iUsersCount / self::ITEMS_PER_PAGE);
-
-			$aUsers = array();
-			while ($this->oMigrationLog->CurUsersPage - 1 < $iPageUserCount)
-			{
-				$aUsers = $this->oP7ApiUsersManager->getUserList($iDomainId, $this->oMigrationLog->CurUsersPage, self::ITEMS_PER_PAGE);
-				if (is_array($aUsers) && count($aUsers) > 0)
+				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus > self::ATTEMPTS_MAX_NUMBER)
 				{
-					foreach ($aUsers as $aP7UserItem)
+					//add user to not-migrated-users files and scip
+					$rNotMigratedUsersHandle = @fopen($this->sNotMigratedUsersFile, "a");
+					if (!$rNotMigratedUsersHandle || !@fwrite($rNotMigratedUsersHandle, $sP7UserEmail . "\r\n"))
 					{
-						$iP7UserId = (int) $aP7UserItem[4];
-						$sP7UserEmail = $aP7UserItem[1];
-						if (!$this->bFindUser && $this->oMigrationLog->CurUserId !== 0 && $iP7UserId < $this->oMigrationLog->CurUserId)
-						{
-							//skip User if already done
-							\Aurora\System\Api::Log("Skip user: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							continue;
-						}
-						else
-						{
-							$this->bFindUser = true;
-						}
+						\Aurora\System\Api::Log("Error: can't write in " . $this->sNotMigratedUsersFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						exit("Error: can't write in " . $this->sNotMigratedUsersFile);
+					}
+					$this->bFindUser = true;
+					continue;
+				}
+				$this->bFindUser = true;
+				//fix the beginning of migration
+				$this->oMigrationLog->CurUserStatus = $this->oMigrationLog->CurUserStatus === -1 ? 1 : $this->oMigrationLog->CurUserStatus + 1;
+				$this->oMigrationLog->CurUserEmail = $sP7UserEmail;
+				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 
-						$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
-						if ($oP8User instanceof \Aurora\Modules\Core\Classes\User)
-						{
-							\Aurora\System\Api::Log("User already exists: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						}
-						else
-						{
-							if (!$this->oP8CoreDecorator->CreateUser(0, $sP7UserEmail, \Aurora\System\Enums\UserRole::NormalUser, false))
-							{
-								\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process. For more details see log-file.");
-							}
-							$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
-							if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
-							{
-								\Aurora\System\Api::Log("User not found: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process. For more details see log-file.");
-							}
+				$oP7Account = $this->oP7ApiUsersManager->getAccountByEmail($sP7UserEmail);
+				if (!$oP7Account instanceof \CAccount)
+				{
+					\Aurora\System\Api::Log("Account not found. " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Account not found. " . $sP7UserEmail);
+				}
 
-							$this->oMigrationLog->CurUserId = $iP7UserId;
-							$this->oMigrationLog->CurAccountId = 0;
-							$this->oMigrationLog->NewAccountId = 0;
-							$this->oMigrationLog->CurIdentitiesId = 0;
-							$this->oMigrationLog->NewIdentitiesId = 0;
-							$this->oMigrationLog->CurSocialAccountId = 0;
-							$this->oMigrationLog->NewSocialAccountId = 0;
-							file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-						}
-						if (!$this->UserP7ToP8($iP7UserId, $oP8User))
-						{
-							\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							exit("Error during migration process. For more details see log-file.");
-						}
-						$this->iUserCount++;
-						//DAV Calendars
-						if (!$this->UpgradeDAVCalendar($oP8User))
-						{
-							\Aurora\System\Api::Log("Error while User calendars creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							exit("Error during migration process. For more details see log-file.");
-						}
+				if (!$oP7Account instanceof \CAccount)
+				{
+					\Aurora\System\Api::Log("Error: not found user:  " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Error: not found user:  " . $sP7UserEmail);
+				}
+				$iP7UserId = $oP7Account->IdUser;
+				$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
+				if ($oP8User instanceof \Aurora\Modules\Core\Classes\User)
+				{
+					\Aurora\System\Api::Log("User already exists: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				}
+				else
+				{ 	\Aurora\System\Api::Log("Start user creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$iNewUserId = $this->oP8CoreDecorator->CreateUser(0, $sP7UserEmail, \Aurora\System\Enums\UserRole::NormalUser, false);
+					if (!$iNewUserId)
+					{
+						\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					} \Aurora\System\Api::Log("End user creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iNewUserId);
+					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
+					{
+						\Aurora\System\Api::Log("User not found: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
 
-						//ACCOUNTS
-						$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
-						foreach ($aAccountsId as $iP7AccountId)
-						{
-							if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $iP7AccountId < $this->oMigrationLog->CurAccountId)
-							{
-								//skip Account if already done
-								\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								continue;
-							}
-							else
-							{
-								$this->bFindAccount = true;
-							}
-							if (!$this->AccountP7ToP8($iP7AccountId, $oP8User, $oServer))
-							{
-								\Aurora\System\Api::Log("Error while User accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process. For more details see log-file.");
-							}
-							//SOCIAL ACCOUNTS
-							if (!$this->SocialAccountsP7ToP8($iP7AccountId, $oP8User, $oServer))
-							{
-								\Aurora\System\Api::Log("Error while User social accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process. For more details see log-file.");
-							}
-						}
-
-						//CONTACTS
-						/* @var $aContactListItems array */
-						$aContactListItems = $this->oP7ApiContactsManagerFrom->getContactItemsWithoutOrder($iP7UserId, 0, 9999);
-						if (count($aContactListItems) === 0)
-						{
-							$this->oMigrationLog->CurContactId = 0;
-							file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-						}
-						$iContactsCount = 0;
-						/* @var $oListItem CContactListItem */
-						foreach ($aContactListItems as $oListItem)
-						{
-							if (!$this->bFindContact && $this->oMigrationLog->CurContactId !== 0 && $oListItem->Id <= $this->oMigrationLog->CurContactId)
-							{
-								//skip Contact if already done
-								\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								continue;
-							}
-							else
-							{
-								$this->bFindContact = true;
-							}
-							if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
-							{
-								\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								exit("Error during migration process. For more details see log-file.");
-							}
-							else
-							{
-								$iContactsCount++;
-							}
-						}
-						\Aurora\System\Api::Log("User: $sP7UserEmail Contacts processed: " . $iContactsCount, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->oMigrationLog->CurAccountId = 0;
+					$this->oMigrationLog->NewAccountId = 0;
+					$this->oMigrationLog->CurIdentitiesId = 0;
+					$this->oMigrationLog->NewIdentitiesId = 0;
+					$this->oMigrationLog->CurSocialAccountId = 0;
+					$this->oMigrationLog->NewSocialAccountId = 0;
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				if (!$this->UserP7ToP8($oP7Account, $oP8User))
+				{
+					\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Redirect();
+				}
+				$this->iUserCount++;
+				//DAV Calendars
+				if (!$this->UpgradeDAVCalendar($oP8User))
+				{
+					\Aurora\System\Api::Log("Error while User calendars creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Redirect();
+				}
+				//DOMAIN
+				$oServer = !$oP7Account->Domain->IsDefaultDomain ? $this->GetServerByName($oP7Account->Domain->Name) : false;
+				if (!$oP7Account->Domain->IsDefaultDomain && !$oServer)
+				{
+					//create server if not exists and not default
+					$iServerId = $this->DomainP7ToP8($this->oP7ApiDomainsManager->getDomainById($oP7Account->Domain->IdDomain));
+					if (!$iServerId)
+					{
+						\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+					$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
+					if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
+					{
+						\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				//ACCOUNTS
+				$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
+				foreach ($aAccountsId as $iP7AccountId)
+				{
+					if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $iP7AccountId < $this->oMigrationLog->CurAccountId)
+					{
+						//skip Account if already done
+						\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						continue;
+					}
+					else
+					{
+						$this->bFindAccount = true;
+					}
+					if (!$this->AccountP7ToP8($iP7AccountId, $oP8User, $oServer))
+					{
+						\Aurora\System\Api::Log("Error while User accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+					//SOCIAL ACCOUNTS
+					if (!$this->SocialAccountsP7ToP8($iP7AccountId, $oP8User))
+					{
+						\Aurora\System\Api::Log("Error while User social accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
 					}
 				}
-				$this->oMigrationLog->CurUsersPage++;
+
+				//CONTACTS
+				/* @var $aContactListItems array */
+				$aContactListItems = $this->oP7ApiContactsManagerFrom->getContactItemsWithoutOrder($iP7UserId, 0, 9999);
+				if (count($aContactListItems) === 0)
+				{
+					$this->oMigrationLog->CurContactId = 0;
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				$iContactsCount = 0;
+				/* @var $oListItem CContactListItem */
+				foreach ($aContactListItems as $oListItem)
+				{
+					if (!$this->bFindContact && $this->oMigrationLog->CurContactId !== 0 && $oListItem->Id !== $this->oMigrationLog->CurContactId)
+					{
+						//skip Contact if already done
+						\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						continue;
+					}
+					else
+					{
+						$this->bFindContact = true;
+					}
+					if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
+					{
+						\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+					else
+					{
+						$iContactsCount++;
+					}
+				}
+				//add user to migrated-users file
+				if(!@fwrite($rMigratedUsersHandle, $sP7UserEmail . "\r\n"))
+				{
+					\Aurora\System\Api::Log("Error: can't write in " . $this->sMigratedUsersFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					exit("Error: can't write in " . $this->sMigratedUsersFile);
+				}
+				\Aurora\System\Api::Log("User: $sP7UserEmail Processed " . $iContactsCount . " contacts from " . count($aContactListItems), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->oMigrationLog->CurUserStatus = 0;
+				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				$this->Redirect();
 			}
-			$this->oMigrationLog->CurUsersPage = 1;
+			fclose($rUserListHandle);
 		}
 		\Aurora\System\Api::Log("Users migrated. {$this->iUserCount} users processed", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		echo "Users migrated. {$this->iUserCount} users processed\n";
+//		echo "Users migrated. {$this->iUserCount} users processed\n";
 		$this->oMigrationLog->UsersMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 	}
 
-	public function UserP7ToP8($iP7UserId, \Aurora\Modules\Core\Classes\User $oP8User)
-	{
-		$oP7User = $this->oP7ApiUsersManager->getUserById($iP7UserId);
-		$iP7AccountId = $this->oP7ApiUsersManager->getDefaultAccountId($iP7UserId);
-		$oP7Account = $this->oP7ApiUsersManager->getAccountById($iP7AccountId);
-		$oP7UserCalendarSettings = $this->oP7ApiUsersManager->getCalUser($iP7UserId);
-
-		if (!$oP7User instanceof \CUser)
-		{
-			return false;
-		}
-		
+	public function UserP7ToP8(\CAccount $oP7Account, \Aurora\Modules\Core\Classes\User $oP8User)
+	{	
+		$oP7UserCalendarSettings = $this->oP7ApiUsersManager->getCalUser($oP7Account->IdUser);
+		\Aurora\System\Api::Log("getCalUser", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$oP8User->IsDisabled = $oP7Account ? $oP7Account->IsDisabled : false;
 
 		//Common settings
-		$oP8User->Language = $oP7User->DefaultLanguage;
-		$oP8User->{'CoreWebclient::AutoRefreshIntervalMinutes'} = $oP7User->AutoCheckMailInterval;
-		$oP8User->TimeFormat = $oP7User->DefaultTimeFormat;
-		$oP8User->DateFormat = $oP7User->DefaultDateFormat;
-		$oP8User->DesktopNotifications = $oP7User->DesktopNotifications;
+		$oP8User->Language = $oP7Account->User->DefaultLanguage;
+		$oP8User->{'CoreWebclient::AutoRefreshIntervalMinutes'} = $oP7Account->User->AutoCheckMailInterval;
+		$oP8User->TimeFormat = $oP7Account->User->DefaultTimeFormat;
+		$oP8User->DateFormat =$oP7Account->User->DefaultDateFormat;
+		$oP8User->DesktopNotifications =$oP7Account->User->DesktopNotifications;
 
-		$oP8User->{'MailWebclient::MailsPerPage'} = $oP7User->MailsPerPage;
-		$oP8User->{'MailWebclient::SaveRepliesToCurrFolder'} = $oP7User->SaveRepliedMessagesToCurrentFolder;
+		$oP8User->{'MailWebclient::MailsPerPage'} =$oP7Account->User->MailsPerPage;
+		$oP8User->{'MailWebclient::SaveRepliesToCurrFolder'} = $oP7Account->User->SaveRepliedMessagesToCurrentFolder;
 
-		$oP8User->{'Contacts::ContactsPerPage'} = $oP7User->ContactsPerPage;
+		$oP8User->{'Contacts::ContactsPerPage'} = $oP7Account->User->ContactsPerPage;
 
 		//Calendar
 		if ($oP7UserCalendarSettings)
@@ -362,7 +376,7 @@ class P7ToP8Migration
 		$oP8User->FilesEnable = $oP7User->FilesEnable;
 		$oP8User->EmailNotification = $oP7User->EmailNotification;
 		$oP8User->PasswordResetHash = $oP7User->PasswordResetHash;
-
+\Aurora\System\Api::Log("Start user updating: " . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		return $this->oP8CoreDecorator->UpdateUserObject($oP8User);
 	}
 
@@ -381,7 +395,7 @@ class P7ToP8Migration
 			if (!$iServerId)
 			{
 				\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->IncomingMailServer, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				exit("Error during migration process. For more details see log-file.");
+				$this->Redirect();
 			}
 			$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 		}
@@ -435,7 +449,7 @@ class P7ToP8Migration
 		return $bResult;
 	}
 
-	public function SocialAccountsP7ToP8($iP7AccountId, \Aurora\Modules\Core\Classes\User $oP8User, $oServer)
+	public function SocialAccountsP7ToP8($iP7AccountId, \Aurora\Modules\Core\Classes\User $oP8User)
 	{
 		$aSocials = $this->oP7ApiSocial->getSocials($iP7AccountId);
 		if (is_array($aSocials))
@@ -466,14 +480,14 @@ class P7ToP8Migration
 				if (!$this->oP8OAuthIntegratorWebclientModule->oManager->createAccount($oP8SocialAccount))
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process. For more details see log-file.");
+					$this->Redirect();
 				}
 
 				$oP8NewSocialAccount = $this->oP8OAuthIntegratorWebclientModule->oManager->getAccount($oP8User->EntityId, $oSocial->TypeStr);
 				if (!$oP8NewSocialAccount && !$oP8NewSocialAccount instanceof \Aurora\Modules\OAuthIntegratorWebclient\Classes\Account)
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error during migration process. For more details see log-file.");
+					$this->Redirect();
 				}
 				$this->oMigrationLog->CurSocialAccountId = $oSocial->Id;
 				$this->oMigrationLog->NewSocialAccountId = $oP8NewSocialAccount->EntityId;
@@ -685,7 +699,7 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Delete tables in P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		 echo "Remove tables\n";
+//		 echo "Remove tables\n";
 
 		//Move tables from P7 DB to P8  DB
 		$aOutput = null;
@@ -711,8 +725,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Move tables from p7 DB to p8  DB: " . $sMoveTablesFromP7ToP8, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		echo "Move tables from p7 DB to p8  DB";
-		echo "\n-----------------------------------------------\n";
+//		echo "Move tables from p7 DB to p8  DB";
+//		echo "\n-----------------------------------------------\n";
 		//Rename tables before upgrading
 		$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
 			{$oP7DBPrefix}adav_cache TO cache,
@@ -746,8 +760,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		echo  implode("\n", $aOutput);
-		echo "\n-----------------------------------------------\n";
+//		echo  implode("\n", $aOutput);
+//		echo "\n-----------------------------------------------\n";
 
 		unset($aOutput);
 		unset($iStatus);
@@ -759,8 +773,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		echo  implode("\n", $aOutput);
-		echo "\n-----------------------------------------------\n";
+//		echo  implode("\n", $aOutput);
+//		echo "\n-----------------------------------------------\n";
 
 		unset($aOutput);
 		unset($iStatus);
@@ -772,8 +786,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		echo  implode("\n", $aOutput);
-		echo "\n-----------------------------------------------\n";
+//		echo  implode("\n", $aOutput);
+//		echo "\n-----------------------------------------------\n";
 
 		try
 		{
@@ -819,7 +833,7 @@ class P7ToP8Migration
 			return false;
 		}
 
-		echo  "DB upgraded\n";
+//		echo  "DB upgraded\n";
 		return true;
 	}
 
@@ -845,11 +859,11 @@ class P7ToP8Migration
 
 	public function MigrateUserFiles()
 	{
-		echo  "Start moving files\n";
+//		echo  "Start moving files\n";
 		\Aurora\System\Api::Log("Start moving files", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		if ($this->oMigrationLog->FilesMigrated)
 		{
-			echo  "Files already moved\n";
+//			echo  "Files already moved\n";
 			\Aurora\System\Api::Log("Files already moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return true;
 		}
@@ -883,7 +897,7 @@ class P7ToP8Migration
 		}
 		$this->oMigrationLog->FilesMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-		echo  "Files successfully moved\n";
+//		echo  "Files successfully moved\n";
 		\Aurora\System\Api::Log("Files successfully moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
 
@@ -946,10 +960,45 @@ class P7ToP8Migration
 		}
 		return $aFilesProperties;
 	}
+
+	public function CreateUserList()
+	{
+		$sGetUserLIstQuery = "SELECT DISTINCT `email` FROM `" . \CApi::GetSettings()->GetConf('Common/DBPrefix') . "awm_accounts`
+				WHERE `def_acct`=1
+				ORDER BY `email`";
+		$stmt = \CApi::GetPDO()->prepare($sGetUserLIstQuery);
+		$stmt->execute();
+		$aUsers = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+		file_put_contents($this->sUserListFile, implode("\r\n", $aUsers));
+	}
+
+	public function Redirect()
+	{
+		$i = $_GET["i"] ? : 0;
+		header("Location: /dev/migrate.php?i=" . ++$i);
+		exit;
+	}
 }
 
 $oMigration = new P7ToP8Migration();
-$oMigration->Init();
-$oMigration->Start();
-$oMigration->MigrateUserFiles();
+
+if (isset($_GET["user_list"]))
+{
+	$oMigration->Init();
+	$oMigration->CreateUserList();
+}
+else
+{
+	try
+	{
+		
+		$oMigration->Start();
+		$oMigration->MigrateUserFiles();
+	}
+	catch (Exception $e)
+	{
+		header("Location: /dev/migrate.php");
+		exit;
+	}
+}
 exit("Done");
