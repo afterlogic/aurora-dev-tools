@@ -1,8 +1,17 @@
 <?php
-ini_set("display_errors", "0");
+/**
+ * Remember that migration starts only for NEW p8 installation without any users
+ * 1 - enter path to your p7 installation in $sP7ProductPath
+ *  For example "C:/web/your-p7-domain"
+ * 2 - run the script with argument "user_list" for creating file "user_list" in "data" directory
+ * For example "http://your-p7-domain?user_list"
+ * 3 - check that "user_list" file was successfully created and contains list of users
+ * 4 - run the script without arguments to start migration process
+ */
+error_reporting(E_ERROR);
 set_time_limit(0);
 
-$sP7ProductPath = "path to your p7 installation";
+$sP7ProductPath = "PATH_TO_YOUR_P7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
@@ -47,6 +56,9 @@ class P7ToP8Migration
 	public $bFindIdentity = false;
 	public $bFindContact = false;
 	public $bFindSocial = false;
+
+	public $sP7UserFiles = null;
+	public $sP8UserFiles = null;
 
 	public function Init()
 	{
@@ -112,6 +124,9 @@ class P7ToP8Migration
 		$this->sUserListFile = \Aurora\System\Api::DataPath() . "/user_list";
 		$this->sMigratedUsersFile = \Aurora\System\Api::DataPath() . '/migrated-users';
 		$this->sNotMigratedUsersFile = \Aurora\System\Api::DataPath() . '/not-migrated-users';
+
+		$this->sP7UserFiles = \CApi::DataPath() . "/files/private";
+		$this->sP8UserFiles = \Aurora\System\Api::DataPath() . "/files/private";
 	}
 
 	public function Start()
@@ -132,8 +147,12 @@ class P7ToP8Migration
 
 		if ($this->oMigrationLog->CurUserEmail === '')
 		{
-//			echo "Start users migration\n";
+			$this->Output("Start users migration");
 			\Aurora\System\Api::Log("Start users migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		}
+		else
+		{
+			$this->Output("<pre>");
 		}
 		//USERS
 		if (!file_exists($this->sUserListFile))
@@ -155,20 +174,18 @@ class P7ToP8Migration
 			while (($sP7UserEmail = @fgets($rUserListHandle)) !== false)
 			{
 				$sP7UserEmail = \trim($sP7UserEmail);
+				if ($sP7UserEmail === '')
+				{
+					continue;
+				}
 				if (!$this->bFindUser && $this->oMigrationLog->CurUserEmail !== '' && $sP7UserEmail !== $this->oMigrationLog->CurUserEmail)
 				{
 					//skip User
 					continue;
 				}
-				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus === 0)
-				{
-					//skip User if successfully migrated
-					$this->bFindUser = true;
-					continue;
-				}
 				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus > self::ATTEMPTS_MAX_NUMBER)
 				{
-					//add user to not-migrated-users files and scip
+					//add user to not-migrated-users files and skip
 					$rNotMigratedUsersHandle = @fopen($this->sNotMigratedUsersFile, "a");
 					if (!$rNotMigratedUsersHandle || !@fwrite($rNotMigratedUsersHandle, $sP7UserEmail . "\r\n"))
 					{
@@ -178,6 +195,13 @@ class P7ToP8Migration
 					$this->bFindUser = true;
 					continue;
 				}
+				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus === 0)
+				{
+					//skip User if successfully migrated
+					$this->bFindUser = true;
+					continue;
+				}
+				$this->Output("User: $sP7UserEmail");
 				$this->bFindUser = true;
 				//fix the beginning of migration
 				$this->oMigrationLog->CurUserStatus = $this->oMigrationLog->CurUserStatus === -1 ? 1 : $this->oMigrationLog->CurUserStatus + 1;
@@ -203,13 +227,13 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("User already exists: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				}
 				else
-				{ 	\Aurora\System\Api::Log("Start user creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				{
 					$iNewUserId = $this->oP8CoreDecorator->CreateUser(0, $sP7UserEmail, \Aurora\System\Enums\UserRole::NormalUser, false);
 					if (!$iNewUserId)
 					{
 						\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						$this->Redirect();
-					} \Aurora\System\Api::Log("End user creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					}
 					$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iNewUserId);
 					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
 					{
@@ -223,6 +247,7 @@ class P7ToP8Migration
 					$this->oMigrationLog->NewIdentitiesId = 0;
 					$this->oMigrationLog->CurSocialAccountId = 0;
 					$this->oMigrationLog->NewSocialAccountId = 0;
+					$this->oMigrationLog->CurContactId = 0;
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
 				if (!$this->UserP7ToP8($oP7Account, $oP8User))
@@ -230,7 +255,6 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->Redirect();
 				}
-				$this->iUserCount++;
 				//DAV Calendars
 				if (!$this->UpgradeDAVCalendar($oP8User))
 				{
@@ -301,10 +325,12 @@ class P7ToP8Migration
 						\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						continue;
 					}
-					else
+					else if (!$this->bFindContact && $this->oMigrationLog->CurContactId !== 0)
 					{
 						$this->bFindContact = true;
+						continue;
 					}
+					$this->bFindContact = true;
 					if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
 					{
 						\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -315,6 +341,12 @@ class P7ToP8Migration
 						$iContactsCount++;
 					}
 				}
+				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
+				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
+				{
+					$sDestinationPath = $this->sP8UserFiles . "/" . $oP8User->UUID;
+					$this->CopyDir($sTargetPath, $sDestinationPath);
+				}
 				//add user to migrated-users file
 				if(!@fwrite($rMigratedUsersHandle, $sP7UserEmail . "\r\n"))
 				{
@@ -324,12 +356,13 @@ class P7ToP8Migration
 				\Aurora\System\Api::Log("User: $sP7UserEmail Processed " . $iContactsCount . " contacts from " . count($aContactListItems), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				$this->oMigrationLog->CurUserStatus = 0;
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				$this->Output("Processed " . $iContactsCount . " contacts from " . count($aContactListItems));
 				$this->Redirect();
 			}
 			fclose($rUserListHandle);
 		}
-		\Aurora\System\Api::Log("Users migrated. {$this->iUserCount} users processed", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		echo "Users migrated. {$this->iUserCount} users processed\n";
+		\Aurora\System\Api::Log("Users migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("Users migrated");
 		$this->oMigrationLog->UsersMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 	}
@@ -337,7 +370,6 @@ class P7ToP8Migration
 	public function UserP7ToP8(\CAccount $oP7Account, \Aurora\Modules\Core\Classes\User $oP8User)
 	{	
 		$oP7UserCalendarSettings = $this->oP7ApiUsersManager->getCalUser($oP7Account->IdUser);
-		\Aurora\System\Api::Log("getCalUser", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$oP8User->IsDisabled = $oP7Account ? $oP7Account->IsDisabled : false;
 
 		//Common settings
@@ -364,19 +396,18 @@ class P7ToP8Migration
 		}
 
 		//Other
-		$oP8User->Question1 = $oP7User->Question1;
-		$oP8User->Question2 = $oP7User->Question2;
-		$oP8User->Answer1 = $oP7User->Answer1;
-		$oP8User->Answer2 = $oP7User->Answer2;
-		$oP8User->SipEnable = $oP7User->SipEnable;
-		$oP8User->SipImpi = $oP7User->SipImpi;
-		$oP8User->SipPassword = $oP7User->SipPassword;
-		$oP8User->Capa = $oP7User->Capa;
-		$oP8User->CustomFields = $oP7User->CustomFields;
-		$oP8User->FilesEnable = $oP7User->FilesEnable;
-		$oP8User->EmailNotification = $oP7User->EmailNotification;
-		$oP8User->PasswordResetHash = $oP7User->PasswordResetHash;
-\Aurora\System\Api::Log("Start user updating: " . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$oP8User->Question1 = $oP7Account->User->Question1;
+		$oP8User->Question2 = $oP7Account->User->Question2;
+		$oP8User->Answer1 = $oP7Account->User->Answer1;
+		$oP8User->Answer2 = $oP7Account->User->Answer2;
+		$oP8User->SipEnable = $oP7Account->User->SipEnable;
+		$oP8User->SipImpi = $oP7Account->User->SipImpi;
+		$oP8User->SipPassword = $oP7Account->User->SipPassword;
+		$oP8User->Capa = $oP7Account->User->Capa;
+		$oP8User->CustomFields = $oP7Account->User->CustomFields;
+		$oP8User->FilesEnable = $oP7Account->User->FilesEnable;
+		$oP8User->EmailNotification = $oP7Account->User->EmailNotification;
+		$oP8User->PasswordResetHash = $oP7Account->User->PasswordResetHash;
 		return $this->oP8CoreDecorator->UpdateUserObject($oP8User);
 	}
 
@@ -699,7 +730,7 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Delete tables in P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		 echo "Remove tables\n";
+		$this->Output("<pre>Remove tables");
 
 		//Move tables from P7 DB to P8  DB
 		$aOutput = null;
@@ -724,9 +755,21 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during upgrade DB process. Failed process of moving tables from p7 DB to p8 DB.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return false;
 		}
+		$sMoveTablesFromP7ToP8 = "mysqldump -u{$oP7DBLogin} " . ($oP7DBPassword ? "-p******" : "") . " -h{$oP7DBHost} {$oP7DBName} --tables "
+			. $oP7DBPrefix . "adav_addressbooks "
+			. $oP7DBPrefix . "adav_cache "
+			. $oP7DBPrefix . "adav_calendarobjects "
+			. $oP7DBPrefix . "adav_calendars "
+			. $oP7DBPrefix . "adav_calendarshares "
+			. $oP7DBPrefix . "adav_cards "
+			. $oP7DBPrefix . "adav_groupmembers "
+			. $oP7DBPrefix . "adav_locks "
+			. $oP7DBPrefix . "adav_principals "
+			. $oP7DBPrefix . "adav_reminders "
+			."| mysql -u{$oP8DBLogin} " . ($oP8DBPassword ? "-p******" : "") . " -h{$oP8DBHost}  {$oP8DBName}";
 		\Aurora\System\Api::Log("Move tables from p7 DB to p8  DB: " . $sMoveTablesFromP7ToP8, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		echo "Move tables from p7 DB to p8  DB";
-//		echo "\n-----------------------------------------------\n";
+		$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
+		
 		//Rename tables before upgrading
 		$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
 			{$oP7DBPrefix}adav_cache TO cache,
@@ -760,8 +803,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		echo  implode("\n", $aOutput);
-//		echo "\n-----------------------------------------------\n";
+		$this->Output(implode("\n", $aOutput));
+		$this->Output("\n-----------------------------------------------");
 
 		unset($aOutput);
 		unset($iStatus);
@@ -773,8 +816,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		echo  implode("\n", $aOutput);
-//		echo "\n-----------------------------------------------\n";
+		$this->Output(implode("\n", $aOutput));
+		$this->Output("\n-----------------------------------------------");
 
 		unset($aOutput);
 		unset($iStatus);
@@ -786,8 +829,8 @@ class P7ToP8Migration
 			return false;
 		}
 		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-//		echo  implode("\n", $aOutput);
-//		echo "\n-----------------------------------------------\n";
+		$this->Output(implode("\n", $aOutput));
+		$this->Output("\n-----------------------------------------------");
 
 		try
 		{
@@ -833,7 +876,7 @@ class P7ToP8Migration
 			return false;
 		}
 
-//		echo  "DB upgraded\n";
+		$this->Output("DB upgraded");
 		return true;
 	}
 
@@ -857,20 +900,18 @@ class P7ToP8Migration
 		return true;
 	}
 
-	public function MigrateUserFiles()
+	public function UpdateUserFilesInfo()
 	{
-//		echo  "Start moving files\n";
-		\Aurora\System\Api::Log("Start moving files", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("<pre>Start updating files information");
+		\Aurora\System\Api::Log("Start updating files information", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		if ($this->oMigrationLog->FilesMigrated)
 		{
-//			echo  "Files already moved\n";
+			$this->Output("Files information already updated");
 			\Aurora\System\Api::Log("Files already moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return true;
 		}
-		$sSource = \CApi::DataPath() . "/files/private";
-		$sDestination = \Aurora\System\Api::DataPath() . "/files/private";
+		$oDirectory = dir($this->sP8UserFiles);
 
-		$oDirectory = dir($sSource);
 		if ($oDirectory)
 		{
 			while (false !== ($sRead = $oDirectory->read()))
@@ -879,26 +920,29 @@ class P7ToP8Migration
 				{
 					continue;
 				}
+				
+				if ($sRead === ".sabredav")
+				{
+					$aFilesProperties = unserialize(@file_get_contents($this->sP8UserFiles . '/' . $sRead));
+					if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
+					{
+						$aFilesProperties = $this->RenameFilesOwner($aFilesProperties);
+						@file_put_contents($this->sP8UserFiles . '/' . $sRead, serialize($aFilesProperties));
+					}
+				}
 
-				$sPathDir = $sSource.'/'.$sRead;
+				$sPathDir = $this->sP8UserFiles.'/'.$sRead;
 				if (is_dir($sPathDir))
 				{
-					$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sRead);
-					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
-					{
-						continue;
-					}
-					$sDestinationPath = $sDestination . "/" . $oP8User->UUID;
-					$this->CopyDir($sPathDir, $sDestinationPath);
-					continue;
+					$this->UpdateDir($sPathDir);
 				}
 			}
 			$oDirectory->close();
 		}
 		$this->oMigrationLog->FilesMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-//		echo  "Files successfully moved\n";
-		\Aurora\System\Api::Log("Files successfully moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("Files  information successfully updated");
+		\Aurora\System\Api::Log("Files  information successfully updated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
 
 	public function CopyDir($sSource, $sDestination)
@@ -933,14 +977,44 @@ class P7ToP8Migration
 						$aFilesProperties = unserialize(@file_get_contents($sDestination.'/'.$sRead));
 						if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
 						{
-							$aFilesProperties = self::RenameFilesOwner($aFilesProperties);
+							$aFilesProperties = $this->RenameFilesOwner($aFilesProperties);
 							@file_put_contents($sDestination.'/'.$sRead, serialize($aFilesProperties));
 						}
 					}
 				}
-
 				$oDirectory->close();
 			}
+		}
+	}
+
+	public function UpdateDir($sDir)
+	{
+		$oDirectory = dir($sDir);
+		if ($oDirectory)
+		{
+			while (false !== ($sRead = $oDirectory->read()))
+			{
+				if ('.' === $sRead || '..' === $sRead)
+				{
+					continue;
+				}
+				
+				if ($sRead === ".sabredav")
+				{
+					$aFilesProperties = unserialize(@file_get_contents($sDir . '/' . $sRead));
+					if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
+					{
+						$aFilesProperties = $this->RenameFilesOwner($aFilesProperties);
+						@file_put_contents($sDir . '/' . $sRead, serialize($aFilesProperties));
+					}
+				}
+				$sPathDir = $sDir . '/' . $sRead;
+				if (is_dir($sPathDir))
+				{
+					$this->UpdateDir($sPathDir);
+				}
+			}
+			$oDirectory->close();
 		}
 	}
 
@@ -974,12 +1048,20 @@ class P7ToP8Migration
 
 	public function Redirect()
 	{
-		$i = $_GET["i"] ? : 0;
-		header("Location: /dev/migrate.php?i=" . ++$i);
+		echo '<head>
+			<meta http-equiv="refresh" content="1;URL=/dev/migrate.php" />
+			</head>';
 		exit;
 	}
-}
 
+	public function Output($sMessage)
+	{
+		echo  $sMessage . "\n";
+		ob_flush();
+		flush();
+	}
+}
+ob_start();
 $oMigration = new P7ToP8Migration();
 
 if (isset($_GET["user_list"]))
@@ -991,9 +1073,9 @@ else
 {
 	try
 	{
-		
+		$oMigration->Init();
 		$oMigration->Start();
-		$oMigration->MigrateUserFiles();
+		$oMigration->UpdateUserFilesInfo();
 	}
 	catch (Exception $e)
 	{
@@ -1001,4 +1083,5 @@ else
 		exit;
 	}
 }
+ob_end_flush();
 exit("Done");
