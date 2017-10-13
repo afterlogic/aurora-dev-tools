@@ -26,6 +26,7 @@ require_once "../system/autoload.php";
 
 class P7ToP8Migration
 {
+	//Number of unsuccessful attempts after which user will be skipped
 	const ATTEMPTS_MAX_NUMBER = 3;
 
 	public $oP7Settings = false;
@@ -102,7 +103,7 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during initialisation process. OAuthIntegratorWebclient module not found", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			exit("Error during initialisation process. For more details see log-file.");
 		}
-		
+
 		if (!$this->oMigrationLog)
 		{
 			/**
@@ -176,7 +177,7 @@ class P7ToP8Migration
 				\Aurora\System\Api::Log("Error: can't write in " . $this->sMigratedUsersFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				exit("Error: can't write in " . $this->sMigratedUsersFile);
 			}
-			
+
 			while (($sP7UserEmail = @fgets($rUserListHandle)) !== false)
 			{
 				$sP7UserEmail = \trim($sP7UserEmail);
@@ -354,7 +355,7 @@ class P7ToP8Migration
 					$sDestinationPath = $this->sP8UserFiles . "/" . $oP8User->UUID;
 					$this->CopyDir($sTargetPath, $sDestinationPath);
 				}
-				
+
 				//add user to migrated-users file
 				if(!@fwrite($rMigratedUsersHandle, $sP7UserEmail . "\r\n"))
 				{
@@ -535,6 +536,7 @@ class P7ToP8Migration
 		}
 		return true;
 	}
+
 	public function IdentitiesP7ToP8($iP7AccountId, $oP8Account)
 	{
 		$bResult = false;
@@ -928,7 +930,7 @@ class P7ToP8Migration
 				{
 					continue;
 				}
-				
+
 				if ($sRead === ".sabredav")
 				{
 					$aFilesProperties = unserialize(@file_get_contents($this->sP8UserFiles . '/' . $sRead));
@@ -1006,7 +1008,7 @@ class P7ToP8Migration
 				{
 					continue;
 				}
-				
+
 				if ($sRead === ".sabredav")
 				{
 					$aFilesProperties = unserialize(@file_get_contents($sDir . '/' . $sRead));
