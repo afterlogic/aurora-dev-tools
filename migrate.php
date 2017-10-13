@@ -88,13 +88,19 @@ class P7ToP8Migration
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
-			$this->Redirect();
+			\Aurora\System\Api::Log("Error during initialisation process. Mail module not found", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			exit("Error during initialisation process. For more details see log-file.");
 		}
 
 		$this->sMigrationLogFile = \Aurora\System\Api::DataPath() . '/migration';
 		if (file_exists($this->sMigrationLogFile))
 		{
 			$this->oMigrationLog = json_decode(@file_get_contents($this->sMigrationLogFile));
+		}
+		if (!$this->oP8OAuthIntegratorWebclientModule instanceof Aurora\Modules\OAuthIntegratorWebclient\Module)
+		{
+			\Aurora\System\Api::Log("Error during initialisation process. OAuthIntegratorWebclient module not found", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			exit("Error during initialisation process. For more details see log-file.");
 		}
 		
 		if (!$this->oMigrationLog)
@@ -212,13 +218,13 @@ class P7ToP8Migration
 				if (!$oP7Account instanceof \CAccount)
 				{
 					\Aurora\System\Api::Log("Account not found. " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Account not found. " . $sP7UserEmail);
+					$this->Redirect();
 				}
 
 				if (!$oP7Account instanceof \CAccount)
 				{
 					\Aurora\System\Api::Log("Error: not found user:  " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					exit("Error: not found user:  " . $sP7UserEmail);
+					$this->Redirect();
 				}
 				$iP7UserId = $oP7Account->IdUser;
 				$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
@@ -341,12 +347,14 @@ class P7ToP8Migration
 						$iContactsCount++;
 					}
 				}
+				//FILES
 				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
 				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
 				{
 					$sDestinationPath = $this->sP8UserFiles . "/" . $oP8User->UUID;
 					$this->CopyDir($sTargetPath, $sDestinationPath);
 				}
+				
 				//add user to migrated-users file
 				if(!@fwrite($rMigratedUsersHandle, $sP7UserEmail . "\r\n"))
 				{
@@ -361,8 +369,8 @@ class P7ToP8Migration
 			}
 			fclose($rUserListHandle);
 		}
-		\Aurora\System\Api::Log("Users migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output("Users migrated");
+		\Aurora\System\Api::Log("Users were migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("Users were migrated");
 		$this->oMigrationLog->UsersMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 	}
@@ -941,8 +949,8 @@ class P7ToP8Migration
 		}
 		$this->oMigrationLog->FilesMigrated = 1;
 		file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-		$this->Output("Files  information successfully updated");
-		\Aurora\System\Api::Log("Files  information successfully updated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("Files information successfully updated");
+		\Aurora\System\Api::Log("Files information successfully updated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
 
 	public function CopyDir($sSource, $sDestination)
@@ -1079,8 +1087,8 @@ else
 	}
 	catch (Exception $e)
 	{
-		header("Location: /dev/migrate.php");
-		exit;
+		\Aurora\System\Api::Log("Exception: " . $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$oMigration->Redirect();
 	}
 }
 ob_end_flush();
