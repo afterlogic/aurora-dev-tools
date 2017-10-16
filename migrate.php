@@ -678,6 +678,12 @@ class P7ToP8Migration
 
 	public function DomainP7ToP8(\CDomain $oDomain)
 	{
+		$iSievePort = (int) \CApi::GetConf('sieve.config.port', 2000);
+		$aSieveDomains = \CApi::GetConf('sieve.config.domains', array());
+		$aSieveDomains = array_map('trim', $aSieveDomains);
+		$aSieveDomains = array_map('strtolower', $aSieveDomains);
+		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
+
 		$iServerId = $this->oP8MailModule->oApiServersManager->CreateServer(
 			$oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name,
 			$oDomain->IncomingMailServer,
@@ -688,11 +694,11 @@ class P7ToP8Migration
 			$oDomain->OutgoingMailUseSSL,
 			$oDomain->OutgoingMailAuth,
 			$oDomain->IdDomain === 0 ? '*' : $oDomain->Name, //Domains
-			true, //EnableThreading
+			$oDomain->UseThreads, //EnableThreading
 			$oDomain->OutgoingMailLogin,
 			$oDomain->OutgoingMailPassword,
-			false, //EnableSieve
-			2000, //SievePort
+			$bSieveEnabled, //EnableSieve
+			$iSievePort, //SievePort
 			$oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin,
 			0 //TenantId
 		);
