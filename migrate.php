@@ -124,6 +124,7 @@ class P7ToP8Migration
 				'CurSocialAccountId' => 0,
 				'NewSocialAccountId' => 0,
 				'UsersMigrated' => 0,
+				'DomainsMigrated' => 0,
 				'FilesMigrated' => 0
 			];
 		}
@@ -745,8 +746,8 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return false;
 		}
-		\Aurora\System\Api::Log("Delete tables in P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output("<pre>Remove tables");
+		\Aurora\System\Api::Log("Delete tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->Output("<pre>Delete tables before moving");
 
 		//Move tables from P7 DB to P8  DB
 		$aOutput = null;
@@ -818,7 +819,7 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return false;
 		}
-		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$this->Output(implode("\n", $aOutput));
 		$this->Output("\n-----------------------------------------------");
 
@@ -831,7 +832,7 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return false;
 		}
-		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$this->Output(implode("\n", $aOutput));
 		$this->Output("\n-----------------------------------------------");
 
@@ -844,7 +845,7 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return false;
 		}
-		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$this->Output(implode("\n", $aOutput));
 		$this->Output("\n-----------------------------------------------");
 
@@ -1076,6 +1077,47 @@ class P7ToP8Migration
 		ob_flush();
 		flush();
 	}
+
+	public function MigrateEmptyDomains()
+	{
+		if ($this->sMigrationLogFile->DomainsMigrated === 1)
+		{
+			$this->Output("Empty domains already migrated");
+			\Aurora\System\Api::Log("Empty domains already migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return true;
+		}
+		$this->Output("Migrate empty domains");
+		\Aurora\System\Api::Log("Migrate empty domains", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$aDomains = $this->oP7ApiDomainsManager->getFullDomainsList();
+		$aDomains[0] = array(false, 'Default'); // Default Domain
+
+		foreach ($aDomains as $iDomainId => $oDomainItem)
+		{
+			$sDomainName = $oDomainItem[1];
+			$oServer = $iDomainId !== 0 ? $this->GetServerByName($sDomainName) : false;
+
+			if ($iDomainId !== 0 && !$oServer)
+			{
+				//create server if not exists and not default
+				$iServerId = $this->DomainP7ToP8($this->oP7ApiDomainsManager->getDomainById($iDomainId));
+				if (!$iServerId)
+				{
+					\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Redirect();
+				}
+				$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
+				if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
+				{
+					\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Redirect();
+				}
+				$this->sMigrationLogFile->DomainsMigrated = 1;
+				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+			}
+		}
+		$this->Output("Empty domains migrated");
+		\Aurora\System\Api::Log("Empty domains migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+	}
 }
 ob_start();
 $oMigration = new P7ToP8Migration();
@@ -1091,6 +1133,7 @@ else
 	{
 		$oMigration->Init();
 		$oMigration->Start();
+		$oMigration->MigrateEmptyDomains();
 		$oMigration->UpdateUserFilesInfo();
 	}
 	catch (Exception $e)
