@@ -1,17 +1,17 @@
 <?php
 /**
- * Remember that migration starts only for NEW p8 installation without any users
- * 1 - enter path to your p7 installation in $sP7ProductPath
- *  For example "C:/web/your-p7-domain"
+ * Remember that migration starts only for NEW WebMail v8 installation without any users
+ * 1 - enter path to your WebMail v7 installation in $sP7ProductPath
+ *  For example "C:/web/your-WebMail-v7-domain"
  * 2 - run the script with argument "user_list" for creating file "user_list" in "data" directory
- * For example "http://your-p7-domain?user_list"
+ * For example "http://your-webmail-v8-domain/dev/migrate.php?user_list"
  * 3 - check that "user_list" file was successfully created and contains list of users
  * 4 - run the script without arguments to start migration process
  */
 error_reporting(E_ERROR);
 set_time_limit(0);
 
-$sP7ProductPath = "PATH_TO_YOUR_P7_INSTALLATION";
+$sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
@@ -90,7 +90,7 @@ class P7ToP8Migration
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
 			\Aurora\System\Api::Log("Error during initialisation process. Mail module not found", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			exit("Error during initialisation process. For more details see log-file.");
+			exit("Error during initialisation process. For more detail see log-file.");
 		}
 
 		$this->sMigrationLogFile = \Aurora\System\Api::DataPath() . '/migration';
@@ -101,7 +101,7 @@ class P7ToP8Migration
 		if (!$this->oP8OAuthIntegratorWebclientModule instanceof Aurora\Modules\OAuthIntegratorWebclient\Module)
 		{
 			\Aurora\System\Api::Log("Error during initialisation process. OAuthIntegratorWebclient module not found", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			exit("Error during initialisation process. For more details see log-file.");
+			exit("Error during initialisation process. For more detail see log-file.");
 		}
 
 		if (!$this->oMigrationLog)
@@ -147,7 +147,7 @@ class P7ToP8Migration
 		{
 			if (!$this->UpgradeDB())
 			{
-				exit("Error during migration process. For more details see log-file.");
+				exit("Error during migration process. For more detail see log-file.");
 			}
 			$this->oMigrationLog->DBUpgraded = 1;
 			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
@@ -191,7 +191,7 @@ class P7ToP8Migration
 					//skip User
 					continue;
 				}
-				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus > self::ATTEMPTS_MAX_NUMBER)
+				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus >= self::ATTEMPTS_MAX_NUMBER)
 				{
 					//add user to not-migrated-users files and skip
 					$rNotMigratedUsersHandle = @fopen($this->sNotMigratedUsersFile, "a");
@@ -201,6 +201,7 @@ class P7ToP8Migration
 						exit("Error: can't write in " . $this->sNotMigratedUsersFile);
 					}
 					$this->bFindUser = true;
+					$this->oMigrationLog->CurUserStatus = -1;
 					continue;
 				}
 				else if ($sP7UserEmail === $this->oMigrationLog->CurUserEmail && $this->oMigrationLog->CurUserStatus === 0)
