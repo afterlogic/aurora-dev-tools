@@ -8,10 +8,9 @@
  * 3 - check that "user_list" file was successfully created and contains list of users
  * 4 - run the script without arguments to start migration process
  */
-error_reporting(E_ERROR);
 set_time_limit(0);
 
-$sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
+$sP7ProductPath = "d:/web/OpenServer/domains/p7.dev";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
@@ -30,6 +29,7 @@ class P7ToP8Migration
 	const ATTEMPTS_MAX_NUMBER = 3;
 
 	public $oP7Settings = false;
+	public $oP7PDO = false;
 	public $oP8PDO = false;
 	public $oP8Settings = false;
 
@@ -121,6 +121,7 @@ class P7ToP8Migration
 				'CurIdentitiesId' => 0,
 				'NewIdentitiesId' => 0,
 				'CurContactId' => 0,
+				'CurGroupContactId' => 0,
 				'CurSocialAccountId' => 0,
 				'NewSocialAccountId' => 0,
 				'UsersMigrated' => 0,
@@ -135,6 +136,14 @@ class P7ToP8Migration
 
 		$this->sP7UserFiles = \CApi::DataPath() . "/files/private";
 		$this->sP8UserFiles = \Aurora\System\Api::DataPath() . "/files/private";
+		if (!file_exists(\Aurora\System\Api::DataPath() . "/files") && !is_dir(\Aurora\System\Api::DataPath() . "/files"))
+		{
+			mkdir(\Aurora\System\Api::DataPath() . "/files");
+		}
+		if (!file_exists(\Aurora\System\Api::DataPath() . "/files/private") && !is_dir(\Aurora\System\Api::DataPath() . "/files/private"))
+		{
+			mkdir(\Aurora\System\Api::DataPath() . "/files/private");
+		}
 	}
 
 	public function Start()
@@ -257,6 +266,7 @@ class P7ToP8Migration
 					$this->oMigrationLog->CurSocialAccountId = 0;
 					$this->oMigrationLog->NewSocialAccountId = 0;
 					$this->oMigrationLog->CurContactId = 0;
+					$this->oMigrationLog->CurGroupContactId = 0;
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
 				if (!$this->UserP7ToP8($oP7Account, $oP8User))
@@ -350,6 +360,23 @@ class P7ToP8Migration
 						$iContactsCount++;
 					}
 				}
+				//GROUP CONTACTS
+				$aGroupContactListItems = $this->oP7ApiContactsManagerFrom->getGroupItems($iP7UserId);
+				if (count($aGroupContactListItems) === 0)
+				{
+					$this->oMigrationLog->CurGroupContactId = 0;
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				foreach ($aGroupContactListItems as $oGroupListItem)
+				{
+					$oGroup = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $oGroupListItem->Id);
+					if (!$this->GroupContactP7ToP8($oGroup, $oP8User))
+					{
+						\Aurora\System\Api::Log("Error while Group contact creation: " . $oGroup->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+				}
+die();
 				//FILES
 				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
 				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
@@ -665,6 +692,27 @@ class P7ToP8Migration
 		return $aResult;
 	}
 
+	public function GroupContactP7ToP8(\CGroup $oGroup, \Aurora\Modules\Core\Classes\User $oP8User)
+	{
+		$oP8Group = [
+			"UUID" => "",
+			"Name" => $oGroup->Name,
+			"IsOrganization" => (int) $oGroup->IsOrganization,
+			"Email" => $oGroup->Email,
+			"Country" => $oGroup->Country,
+			"City" => $oGroup->City,
+			"Company" => $oGroup->Company,
+			"Fax" => $oGroup->Fax,
+			"Phone" => $oGroup->Phone,
+			"State" => $oGroup->State,
+			"Street" => $oGroup->Street,
+			"Web" => $oGroup->Web,
+			"Zip" => $oGroup->Zip,
+			"Contacts" => []
+		];
+//		$this->oP8ContactsDecorator->CreateGroup($oP8Group);
+	}
+
 	public function GetServerByName($sServerName)
 	{
 		$aServers = $this->oP8MailModuleDecorator->GetServers();
@@ -721,6 +769,35 @@ class P7ToP8Migration
 		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
 		$oP8DBHost = $this->oP8Settings->GetConf('DBHost');
 
+		//Check if DB exists
+		$sCheckTablesQuery = "SELECT count(*) FROM INFORMATION_SCHEMA.TABLES
+			WHERE table_schema = '{$oP8DBName}'
+			AND (
+			   table_name LIKE '{$oP8DBPrefix}eav_entities'
+			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_text'
+			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_bool'
+			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_datetime'
+			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_int'
+			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_string'
+			)";
+		try
+		{
+			$stmt = $this->oP8PDO->prepare($sCheckTablesQuery);
+			$stmt->execute();
+			$iCheckTables = (int) $stmt->fetchColumn();
+			if ($iCheckTables < 6)
+			{
+				\Aurora\System\Api::Log("The integrity of the database is broken. ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Output("The integrity of the database is broken");
+				return false;
+			}
+		}
+		catch (Exception $e)
+		{
+			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return false;
+		}
+
 		//Delete tables in P8
 		$sDelTableQuery = "DROP TABLE IF EXISTS `{$oP8DBPrefix}adav_addressbookchanges`,
 			`{$oP8DBPrefix}adav_addressbooks`,
@@ -751,41 +828,7 @@ class P7ToP8Migration
 		$this->Output("<pre>Delete tables before moving");
 
 		//Move tables from P7 DB to P8  DB
-		$aOutput = null;
-		$iStatus = null;
-		$sMoveTablesFromP7ToP8 = "mysqldump -u{$oP7DBLogin} " . ($oP7DBPassword ? "-p{$oP7DBPassword}" : "") . " -h{$oP7DBHost} {$oP7DBName} --tables "
-			. $oP7DBPrefix . "adav_addressbooks "
-			. $oP7DBPrefix . "adav_cache "
-			. $oP7DBPrefix . "adav_calendarobjects "
-			. $oP7DBPrefix . "adav_calendars "
-			. $oP7DBPrefix . "adav_calendarshares "
-			. $oP7DBPrefix . "adav_cards "
-			. $oP7DBPrefix . "adav_groupmembers "
-			. $oP7DBPrefix . "adav_locks "
-			. $oP7DBPrefix . "adav_principals "
-			. $oP7DBPrefix . "adav_reminders "
-			."| mysql -u{$oP8DBLogin} " . ($oP8DBPassword ? "-p{$oP8DBPassword}" : "") . " -h{$oP8DBHost}  {$oP8DBName}";
-
-		exec($sMoveTablesFromP7ToP8, $aOutput, $iStatus);
-
-		if ($iStatus !== 0)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. Failed process of moving tables from p7 DB to p8 DB.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
-		$sMoveTablesFromP7ToP8 = "mysqldump -u{$oP7DBLogin} " . ($oP7DBPassword ? "-p******" : "") . " -h{$oP7DBHost} {$oP7DBName} --tables "
-			. $oP7DBPrefix . "adav_addressbooks "
-			. $oP7DBPrefix . "adav_cache "
-			. $oP7DBPrefix . "adav_calendarobjects "
-			. $oP7DBPrefix . "adav_calendars "
-			. $oP7DBPrefix . "adav_calendarshares "
-			. $oP7DBPrefix . "adav_cards "
-			. $oP7DBPrefix . "adav_groupmembers "
-			. $oP7DBPrefix . "adav_locks "
-			. $oP7DBPrefix . "adav_principals "
-			. $oP7DBPrefix . "adav_reminders "
-			."| mysql -u{$oP8DBLogin} " . ($oP8DBPassword ? "-p******" : "") . " -h{$oP8DBHost}  {$oP8DBName}";
-		\Aurora\System\Api::Log("Move tables from p7 DB to p8  DB: " . $sMoveTablesFromP7ToP8, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$this->MoveTables();
 		$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
 		
 		//Rename tables before upgrading
@@ -1067,7 +1110,7 @@ class P7ToP8Migration
 	public function Redirect()
 	{
 		echo '<head>
-			<meta http-equiv="refresh" content="1;URL=/dev/migrate.php" />
+			<meta http-equiv="refresh" content="1;URL=//' . $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'] . '" />
 			</head>';
 		exit;
 	}
@@ -1081,7 +1124,7 @@ class P7ToP8Migration
 
 	public function MigrateEmptyDomains()
 	{
-		if ($this->sMigrationLogFile->DomainsMigrated === 1)
+		if ($this->oMigrationLog->DomainsMigrated === 1)
 		{
 			$this->Output("Empty domains already migrated");
 			\Aurora\System\Api::Log("Empty domains already migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1112,12 +1155,85 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->Redirect();
 				}
-				$this->sMigrationLogFile->DomainsMigrated = 1;
+				$this->oMigrationLog->DomainsMigrated = 1;
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 			}
 		}
 		$this->Output("Empty domains migrated");
 		\Aurora\System\Api::Log("Empty domains migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+	}
+
+	public function MoveTables()
+	{
+		$this->oP7PDO = \CApi::GetPDO();
+		$oP7DBLogin = $this->oP7Settings->GetConf('Common/DBLogin');
+		$oP7DBPassword = $this->oP7Settings->GetConf('Common/DBPassword');
+		$oP7DBName = $this->oP7Settings->GetConf('Common/DBName');
+		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$oP7DBHost = $this->oP7Settings->GetConf('Common/DBHost');
+
+		$oP8DBLogin = $this->oP8Settings->GetConf('DBLogin');
+		$oP8DBPassword = $this->oP8Settings->GetConf('DBPassword');
+		$oP8DBName = $this->oP8Settings->GetConf('DBName');
+		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
+		$oP8DBHost = $this->oP8Settings->GetConf('DBHost');
+
+		$aTables = [
+			"adav_addressbooks",
+			"adav_cache",
+			"adav_calendarobjects",
+			"adav_calendars",
+			"adav_calendarshares",
+			"adav_cards",
+			"adav_groupmembers",
+			"adav_locks",
+			"adav_principals",
+			"adav_reminders"
+		];
+
+		foreach ($aTables as $sTableName)
+		{
+			$sGetTableQuery = "SHOW CREATE TABLE `{$oP7DBPrefix}{$sTableName}`";
+			$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}`";
+			try
+			{
+				$stmt = $this->oP7PDO->prepare($sGetTableQuery);
+				$stmt->execute();
+				$aGetTable = $stmt->fetchAll();
+				$this->oP8PDO->exec($aGetTable[0]['Create Table']);
+
+				$stmt = $this->oP7PDO->prepare($sSelectAllQuery);
+				$stmt->execute();
+				$aGetTableData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+				$sInsertDataQuery = '';
+
+				foreach ($aGetTableData as $aRow)
+				{
+					$sInsertDataRow = "";
+					foreach ($aRow as $field)
+					{
+						if (is_null($field))
+							$field = "NULL";
+						else
+							$field = "'" . addslashes($field) . "'";
+						if ($sInsertDataRow == "")
+							$sInsertDataRow = $field;
+						else
+							$sInsertDataRow = $sInsertDataRow . ', ' . $field;
+					}
+					$sInsertDataQuery .= "INSERT INTO `{$oP7DBPrefix}{$sTableName}` VALUES ({$sInsertDataRow});\n";
+				}
+				if ($sInsertDataQuery !== '')
+				{
+					$this->oP8PDO->exec($sInsertDataQuery);
+				}
+			}
+			catch(Exception $e)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+		}
 	}
 }
 ob_start();
