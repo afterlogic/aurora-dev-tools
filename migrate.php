@@ -10,7 +10,7 @@
  */
 set_time_limit(0);
 
-$sP7ProductPath = "d:/web/OpenServer/domains/p7.dev";
+$sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
@@ -56,6 +56,7 @@ class P7ToP8Migration
 	public $bFindAccount = false;
 	public $bFindIdentity = false;
 	public $bFindContact = false;
+	public $bFindGroupContact = false;
 	public $bFindSocial = false;
 
 	public $sP7UserFiles = null;
@@ -326,6 +327,42 @@ class P7ToP8Migration
 					}
 				}
 
+				//GROUP CONTACTS
+				$aGroupContactListItems = $this->oP7ApiContactsManagerFrom->getGroupItems($iP7UserId);
+				if (count($aGroupContactListItems) === 0)
+				{
+					$this->oMigrationLog->CurGroupContactId = 0;
+					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				foreach ($aGroupContactListItems as $oGroupListItem)
+				{
+					if (!$this->bFindGroupContact && $this->oMigrationLog->CurGroupContactId !== 0 && $oGroupListItem->Id !== $this->oMigrationLog->CurGroupContactId)
+					{
+						//skip GroupContact if already done
+						\Aurora\System\Api::Log("Skip Group contact " . $oGroupListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						continue;
+					}
+					else if (!$this->bFindGroupContact && $this->oMigrationLog->CurGroupContactId !== 0)
+					{
+						$this->bFindGroupContact = true;
+						continue;
+					}
+					$this->bFindGroupContact = true;
+					$oGroup = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $oGroupListItem->Id);
+					$iContactsCount = $this->oP7ApiContactsManagerFrom->getContactItemsCount($iP7UserId, '', '', $oGroup->IdGroup);
+					$aContacts = $this->oP7ApiContactsManagerFrom->getContactItems($iP7UserId, \EContactSortField::EMail, \ESortOrder::ASC, 0, $iContactsCount, '', '', $oGroup->IdGroup);
+					$sP8GroupContactUUID = $this->GroupContactP7ToP8($oGroup, $oP8User, $aContacts);
+					if (!$sP8GroupContactUUID)
+					{
+						\Aurora\System\Api::Log("Error while Group contact creation: " . $oGroup->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Redirect();
+					}
+					else
+					{
+						$this->oMigrationLog->CurGroupContactId = $sP8GroupContactUUID;
+						file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+					}
+				}
 				//CONTACTS
 				/* @var $aContactListItems array */
 				$aContactListItems = $this->oP7ApiContactsManagerFrom->getContactItemsWithoutOrder($iP7UserId, 0, 9999);
@@ -360,23 +397,7 @@ class P7ToP8Migration
 						$iContactsCount++;
 					}
 				}
-				//GROUP CONTACTS
-				$aGroupContactListItems = $this->oP7ApiContactsManagerFrom->getGroupItems($iP7UserId);
-				if (count($aGroupContactListItems) === 0)
-				{
-					$this->oMigrationLog->CurGroupContactId = 0;
-					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-				}
-				foreach ($aGroupContactListItems as $oGroupListItem)
-				{
-					$oGroup = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $oGroupListItem->Id);
-					if (!$this->GroupContactP7ToP8($oGroup, $oP8User))
-					{
-						\Aurora\System\Api::Log("Error while Group contact creation: " . $oGroup->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
-					}
-				}
-die();
+
 				//FILES
 				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
 				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
@@ -668,8 +689,7 @@ die();
 			"ETag" => "ETag",
 			"BirthDay" => "BirthdayDay",
 			"BirthMonth" => "BirthdayMonth",
-			"BirthYear" => "BirthdayYear",
-			"GroupUUIDs" => "GroupsIds"
+			"BirthYear" => "BirthdayYear"
 		];
 
 		$oP7Contact = $this->oP7ApiContactsManager->getContactById($iP7UserId, $iP7ContactId);
@@ -677,10 +697,19 @@ die();
 		{
 			return $aResult;
 		}
-
+		$aContactOptions["GroupUUIDs"] = [];
 		foreach ($aObgectFieldsConformity as $sPropertyNameP8 => $sPropertyNameP7)
 		{
 			$aContactOptions[$sPropertyNameP8] = $oP7Contact->$sPropertyNameP7;
+		}
+		foreach ($oP7Contact->GroupsIds as $iGroupId)
+		{
+			$oP7Group = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $iGroupId);
+			$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name);
+			if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
+			{
+				$aContactOptions["GroupUUIDs"][] = $oP8Group->UUID;
+			}
 		}
 
 		if ($this->oP8ContactsDecorator->CreateContact($aContactOptions, $oP8User->EntityId))
@@ -694,7 +723,7 @@ die();
 
 	public function GroupContactP7ToP8(\CGroup $oGroup, \Aurora\Modules\Core\Classes\User $oP8User)
 	{
-		$oP8Group = [
+		$oP8NewGroup = [
 			"UUID" => "",
 			"Name" => $oGroup->Name,
 			"IsOrganization" => (int) $oGroup->IsOrganization,
@@ -710,7 +739,12 @@ die();
 			"Zip" => $oGroup->Zip,
 			"Contacts" => []
 		];
-//		$this->oP8ContactsDecorator->CreateGroup($oP8Group);
+		$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oGroup->Name);
+		if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
+		{
+			return true;
+		}
+		return $this->oP8ContactsDecorator->CreateGroup($oP8NewGroup, $oP8User->EntityId);
 	}
 
 	public function GetServerByName($sServerName)
