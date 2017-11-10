@@ -527,6 +527,19 @@ class P7ToP8Migration
 			$oP8Account->FoldersOrder = $sFolderOrders;
 
 			$bResult = $this->oP8MailModule->oApiAccountsManager->updateAccount($oP8Account);
+			//System folders mapping
+			$aSystemFoldersNames = $this->oP7ApiMail->getSystemFolderNames($oP7Account);
+			if (is_array($aSystemFoldersNames) && count($aSystemFoldersNames) > 0)
+			{
+				$Sent = array_search(\EFolderType::Sent, $aSystemFoldersNames);
+				$Drafts = array_search(\EFolderType::Drafts, $aSystemFoldersNames);
+				$Trash = array_search(\EFolderType::Trash, $aSystemFoldersNames);
+				$Spam = array_search(\EFolderType::Spam, $aSystemFoldersNames);
+				if (!$this->oP8MailModule->SetupSystemFolders($oP8Account->EntityId, $Sent, $Drafts, $Trash, $Spam))
+				{
+					\Aurora\System\Api::Log("Error while setup system folders: ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				}
+			}
 
 			$this->oMigrationLog->CurAccountId = $iP7AccountId;
 			$this->oMigrationLog->NewAccountId = $oP8Account->EntityId;
