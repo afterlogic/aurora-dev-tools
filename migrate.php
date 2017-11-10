@@ -729,7 +729,7 @@ class P7ToP8Migration
 		foreach ($oP7Contact->GroupsIds as $iGroupId)
 		{
 			$oP7Group = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $iGroupId);
-			$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name);
+			$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name, $oP8User->EntityId);
 			if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
 			{
 				$aContactOptions["GroupUUIDs"][] = $oP8Group->UUID;
@@ -763,7 +763,7 @@ class P7ToP8Migration
 			"Zip" => $oGroup->Zip,
 			"Contacts" => []
 		];
-		$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oGroup->Name);
+		$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oGroup->Name, $oP8User->EntityId);
 		if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
 		{
 			return true;
