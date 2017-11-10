@@ -619,6 +619,17 @@ class P7ToP8Migration
 							$oP7Identity->FriendlyName,
 							$oP7Identity->Email
 						);
+						if ($oP7Identity->Default && $iP8EntityId)
+						{
+							$this->oP8MailModuleDecorator->UpdateIdentity(
+								$oP8Account->IdUser,
+								$oP8Account->EntityId,
+								$iP8EntityId,
+								$oP7Identity->FriendlyName,
+								$oP7Identity->Email,
+								true
+							);
+					}
 					}
 					if (!$iP8EntityId)
 					{
@@ -1283,6 +1294,10 @@ else
 	try
 	{
 		$oMigration->Init();
+		if (!file_exists($oMigration->sUserListFile))
+		{
+			$oMigration->CreateUserList();
+		}
 		$oMigration->Start();
 		$oMigration->MigrateEmptyDomains();
 		$oMigration->UpdateUserFilesInfo();
