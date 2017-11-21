@@ -3,18 +3,18 @@
  * Remember that migration starts only for NEW WebMail v8 installation without any users
  * 1 - enter path to your WebMail v7 installation in $sP7ProductPath
  *  For example "C:/web/your-WebMail-v7-domain"
- * 2 - run the script with argument "user_list" for creating file "user_list" in "data" directory
- * For example "http://your-webmail-v8-domain/dev/migrate.php?user_list"
+ * 2 - set $sPassword variable and run the script with arguments "user_list" & "pass" for creating file "user_list" in "data" directory
+ * For example "http://your-webmail-v8-domain/dev/migrate.php?pass=12345&user_list"
  * 3 - check that "user_list" file was successfully created and contains list of users
- * 4 - set $sPassword variable and run the script with argument 'pass' to start migration process
+ * 4 - set $sPassword variable and run the script with argument "pass" to start migration process
+ * 5 - The migration process is described in detail at:
+ * https://afterlogic.com/docs/webmail-pro-8/installation/migration-from-v7
  */
-set_time_limit(0);
-
+$sPassword = "";
 $sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
-$sPassword = "";
-
+set_time_limit(0);
 if (!file_exists($sP7ApiPath))
 {
 	exit("Wrong path for import");
