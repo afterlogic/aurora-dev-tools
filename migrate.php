@@ -6,17 +6,22 @@
  * 2 - run the script with argument "user_list" for creating file "user_list" in "data" directory
  * For example "http://your-webmail-v8-domain/dev/migrate.php?user_list"
  * 3 - check that "user_list" file was successfully created and contains list of users
- * 4 - run the script without arguments to start migration process
+ * 4 - set $sPassword variable and run the script with argument 'pass' to start migration process
  */
 set_time_limit(0);
 
 $sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
+$sPassword = "";
 
 if (!file_exists($sP7ApiPath))
 {
 	exit("Wrong path for import");
+}
+if (!(isset($_GET['pass']) && $sPassword !== '' && $sPassword === $_GET['pass']))
+{
+	exit("Wrong password");
 }
 
 require_once $sP7ApiPath;
