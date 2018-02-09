@@ -444,7 +444,6 @@ class P7ToP8Migration
 		$oP8User->DesktopNotifications =$oP7Account->User->DesktopNotifications;
 
 		$oP8User->{'MailWebclient::MailsPerPage'} =$oP7Account->User->MailsPerPage;
-		$oP8User->{'MailWebclient::SaveRepliesToCurrFolder'} = $oP7Account->User->SaveRepliedMessagesToCurrentFolder;
 
 		$oP8User->{'Contacts::ContactsPerPage'} = $oP7Account->User->ContactsPerPage;
 
@@ -530,6 +529,7 @@ class P7ToP8Migration
 			$oP8Account->UseSignature = $oP7Account->SignatureOptions;
 			$oP8Account->UseThreading = $oServer->EnableThreading;
 			$oP8Account->FoldersOrder = $sFolderOrders;
+			$oP8Account->SaveRepliesToCurrFolder = $oP7Account->User->SaveRepliedMessagesToCurrentFolder;
 
 			$bResult = $this->oP8MailModule->oApiAccountsManager->updateAccount($oP8Account);
 			//System folders mapping
