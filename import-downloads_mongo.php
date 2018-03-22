@@ -39,33 +39,34 @@ class ImportDownloads
 	{
 		$iPage = $Page - 1;
 		$iStart = abs($iPage * $this->iPageSize);		
-
+		
 		$sQuery = "SELECT * FROM downloads LIMIT " . $iStart . ", " . $this->iPageSize . ";";
 		$stmt = $this->oPDO->prepare($sQuery);
 		$stmt->execute();
 		$aResult = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+		
+		$oEavManager = new \Aurora\System\Managers\Eav('MongoDb');
 		foreach ($aResult as $aDownload)
 		{
-			\Aurora\System\Api::Log('START: CreateDownload ['. $aDownload['download_id'] .']', \Aurora\System\Enums\LogLevel::Full, 'import-');
+			$oSale = new \Aurora\Modules\SaleObjects\Classes\Sale('Sales');
 			
-			$oResult = $this->oSalesModule->CreateDownload(
-				$aDownload['download_id'], 
-				$aDownload['product_id'], 
-				$aDownload['download_date'], 
-				$aDownload['email'], 					
-				$aDownload['referer'], 
-				$aDownload['ip'], 
-				$aDownload['gad'], 
-				$aDownload['product_version'], 
-				$aDownload['trial_key'], 
-				$aDownload['license_type'], 
-				$aDownload['referrer_page'], 
-				$aDownload['is_upgrade'], 
-				$aDownload['platform_type']
-			);
+			$oSale->ProductUUID = '';
+			$oSale->CustomerUUID = '';
+			$oSale->Date = $aDownload['download_date'];
+			$oSale->Price = 0;
 			
-			$sResult = $oResult ? 'true' : 'false';
-			\Aurora\System\Api::Log('END: ' . $sResult, \Aurora\System\Enums\LogLevel::Full, 'import-');
+			$oSale->{'Sales::DownloadId'} = $aDownload['download_id'];
+			$oSale->{'Sales::Referer'} = $aDownload['referer'];
+			$oSale->{'Sales::Ip'} = $aDownload['ip'];
+			$oSale->{'Sales::Gad'} = $aDownload['gad']; 
+			$oSale->{'Sales::ProductVersion'} = $aDownload['product_version']; 
+			$oSale->{'Sales::LicenseType'} = $aDownload['license_type']; 
+			$oSale->{'Sales::ReferrerPage'} = $aDownload['referrer_page']; 
+			$oSale->{'Sales::IsUpgrade'} = $aDownload['is_upgrade'];
+			$oSale->{'Sales::PlatformType'} = $aDownload['platform_type'];			
+			$oSale->{'Sales::Deleted'} = false;			
+
+			$oEavManager->createEntity($oSale);
 		}
 	}
 
