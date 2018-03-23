@@ -1,6 +1,6 @@
 #!/bin/bash
 
-update_push () 
+update_push ()
 {
 	git add  -A
 	git commit -m "$3"
