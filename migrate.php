@@ -1010,7 +1010,7 @@ class P7ToP8Migration
 		try
 		{
 			$sCalendarUpdateQuery = "UPDATE `{$oP8DBPrefix}adav_calendars` 
-					SET `principaluri`= 'principals/{$oP8User->UUID}'
+					SET `principaluri`= 'principals/{$oP8User->PublicId}'
 					WHERE `principaluri` = 'principals/{$oP8User->PublicId}'";
 			$stmt = $this->oP8PDO->prepare($sCalendarUpdateQuery);
 			$stmt->execute();
