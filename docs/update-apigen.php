@@ -1,5 +1,5 @@
 <?php
-echo "Start documentation custom process";
+echo "Start documentation custom process \r\n";
 
 include "parsedown.php";
 
