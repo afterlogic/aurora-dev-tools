@@ -294,7 +294,7 @@ class P7ToP8Migration
 					$iServerId = $this->DomainP7ToP8($this->oP7ApiDomainsManager->getDomainById($oP7Account->Domain->IdDomain));
 					if (!$iServerId)
 					{
-						\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						$this->Redirect();
 					}
 					$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
@@ -861,100 +861,103 @@ class P7ToP8Migration
 			return false;
 		}
 
-		//Delete tables in P8
-		$sDelTableQuery = "DROP TABLE IF EXISTS `{$oP8DBPrefix}adav_addressbookchanges`,
-			`{$oP8DBPrefix}adav_addressbooks`,
-			`{$oP8DBPrefix}adav_cache`,
-			`{$oP8DBPrefix}adav_calendarchanges`,
-			`{$oP8DBPrefix}adav_calendarobjects`,
-			`{$oP8DBPrefix}adav_calendars`,
-			`{$oP8DBPrefix}adav_calendarshares`,
-			`{$oP8DBPrefix}adav_calendarsubscriptions`,
-			`{$oP8DBPrefix}adav_cards`,
-			`{$oP8DBPrefix}adav_groupmembers`,
-			`{$oP8DBPrefix}adav_locks`,
-			`{$oP8DBPrefix}adav_principals`,
-			`{$oP8DBPrefix}adav_propertystorage`,
-			`{$oP8DBPrefix}adav_reminders`,
-			`{$oP8DBPrefix}adav_schedulingobjects`";
+		if (!isset($_GET["skip_sabredav_migrate"]))
+		{
+			//Delete tables in P8
+			$sDelTableQuery = "DROP TABLE IF EXISTS `{$oP8DBPrefix}adav_addressbookchanges`,
+				`{$oP8DBPrefix}adav_addressbooks`,
+				`{$oP8DBPrefix}adav_cache`,
+				`{$oP8DBPrefix}adav_calendarchanges`,
+				`{$oP8DBPrefix}adav_calendarobjects`,
+				`{$oP8DBPrefix}adav_calendars`,
+				`{$oP8DBPrefix}adav_calendarshares`,
+				`{$oP8DBPrefix}adav_calendarsubscriptions`,
+				`{$oP8DBPrefix}adav_cards`,
+				`{$oP8DBPrefix}adav_groupmembers`,
+				`{$oP8DBPrefix}adav_locks`,
+				`{$oP8DBPrefix}adav_principals`,
+				`{$oP8DBPrefix}adav_propertystorage`,
+				`{$oP8DBPrefix}adav_reminders`,
+				`{$oP8DBPrefix}adav_schedulingobjects`";
 
-		try
-		{
-			$this->oP8PDO->exec($sDelTableQuery);
-		}
-		catch(Exception $e)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
-		\Aurora\System\Api::Log("Delete tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output("<pre>Delete tables before moving");
+			try
+			{
+				$this->oP8PDO->exec($sDelTableQuery);
+			}
+			catch(Exception $e)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+			\Aurora\System\Api::Log("Delete tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output("<pre>Delete tables before moving");
 
-		//Move tables from P7 DB to P8  DB
-		$this->MoveTables();
-		$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
-		
-		//Rename tables before upgrading
-		$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
-			{$oP7DBPrefix}adav_cache TO cache,
-			{$oP7DBPrefix}adav_calendarobjects TO calendarobjects,
-			{$oP7DBPrefix}adav_calendars TO calendars,
-			{$oP7DBPrefix}adav_calendarshares TO calendarshares,
-			{$oP7DBPrefix}adav_cards TO cards,
-			{$oP7DBPrefix}adav_groupmembers TO groupmembers,
-			{$oP7DBPrefix}adav_locks TO locks,
-			{$oP7DBPrefix}adav_principals TO principals,
-			{$oP7DBPrefix}adav_reminders TO reminders";
+			//Move tables from P7 DB to P8  DB
+			$this->MoveTables();
+			$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
 
-		try
-		{
-			$this->oP8PDO->exec($sRenameTablesQuery);
-		}
-		catch(Exception $e)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
+			//Rename tables before upgrading
+			$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
+				{$oP7DBPrefix}adav_cache TO cache,
+				{$oP7DBPrefix}adav_calendarobjects TO calendarobjects,
+				{$oP7DBPrefix}adav_calendars TO calendars,
+				{$oP7DBPrefix}adav_calendarshares TO calendarshares,
+				{$oP7DBPrefix}adav_cards TO cards,
+				{$oP7DBPrefix}adav_groupmembers TO groupmembers,
+				{$oP7DBPrefix}adav_locks TO locks,
+				{$oP7DBPrefix}adav_principals TO principals,
+				{$oP7DBPrefix}adav_reminders TO reminders";
 
-		//Upgrade sabredav data from 1.8 to 3.0 version
-		unset($aOutput);
-		unset($iStatus);
-		$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
-		exec($sUpgrade18To20, $aOutput, $iStatus);
-		if ($iStatus !== 0)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
-		\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output(implode("\n", $aOutput));
-		$this->Output("\n-----------------------------------------------");
+			try
+			{
+				$this->oP8PDO->exec($sRenameTablesQuery);
+			}
+			catch(Exception $e)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
 
-		unset($aOutput);
-		unset($iStatus);
-		$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
-		exec($sUpgrade20To21, $aOutput, $iStatus);
-		if ($iStatus !== 0)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
-		\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output(implode("\n", $aOutput));
-		$this->Output("\n-----------------------------------------------");
+			//Upgrade sabredav data from 1.8 to 3.0 version
+			$aOutput = null;
+			$iStatus = null;
+			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			exec($sUpgrade18To20, $aOutput, $iStatus);
+			if ($iStatus !== 0)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+			\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output(implode("\n", $aOutput));
+			$this->Output("\n-----------------------------------------------");
 
-		unset($aOutput);
-		unset($iStatus);
-		$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
-		exec($sUpgrade21To30, $aOutput, $iStatus);
-		if ($iStatus !== 0)
-		{
-			\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
+			unset($aOutput);
+			unset($iStatus);
+			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			exec($sUpgrade20To21, $aOutput, $iStatus);
+			if ($iStatus !== 0)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+			\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output(implode("\n", $aOutput));
+			$this->Output("\n-----------------------------------------------");
+
+			unset($aOutput);
+			unset($iStatus);
+			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			exec($sUpgrade21To30, $aOutput, $iStatus);
+			if ($iStatus !== 0)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+			\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output(implode("\n", $aOutput));
+			$this->Output("\n-----------------------------------------------");
 		}
-		\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$this->Output(implode("\n", $aOutput));
-		$this->Output("\n-----------------------------------------------");
 
 		try
 		{
@@ -1229,17 +1232,7 @@ class P7ToP8Migration
 	public function MoveTables()
 	{
 		$this->oP7PDO = \CApi::GetPDO();
-		$oP7DBLogin = $this->oP7Settings->GetConf('Common/DBLogin');
-		$oP7DBPassword = $this->oP7Settings->GetConf('Common/DBPassword');
-		$oP7DBName = $this->oP7Settings->GetConf('Common/DBName');
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
-		$oP7DBHost = $this->oP7Settings->GetConf('Common/DBHost');
-
-		$oP8DBLogin = $this->oP8Settings->GetConf('DBLogin');
-		$oP8DBPassword = $this->oP8Settings->GetConf('DBPassword');
-		$oP8DBName = $this->oP8Settings->GetConf('DBName');
-		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
-		$oP8DBHost = $this->oP8Settings->GetConf('DBHost');
 
 		$aTables = [
 			"adav_addressbooks",
