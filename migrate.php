@@ -312,7 +312,7 @@ class P7ToP8Migration
 					if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $iP7AccountId < $this->oMigrationLog->CurAccountId)
 					{
 						//skip Account if already done
-						\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail . " id " . $aAccountsId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						continue;
 					}
 					else
@@ -820,11 +820,7 @@ class P7ToP8Migration
 
 	public function UpgradeDB()
 	{
-		$oP7DBLogin = $this->oP7Settings->GetConf('Common/DBLogin');
-		$oP7DBPassword = $this->oP7Settings->GetConf('Common/DBPassword');
-		$oP7DBName = $this->oP7Settings->GetConf('Common/DBName');
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
-		$oP7DBHost = $this->oP7Settings->GetConf('Common/DBHost');
 
 		$oP8DBLogin = $this->oP8Settings->GetConf('DBLogin');
 		$oP8DBPassword = $this->oP8Settings->GetConf('DBPassword');
@@ -854,6 +850,11 @@ class P7ToP8Migration
 				$this->Output("The integrity of the database is broken");
 				return false;
 			}
+			$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$oP8DBName}' ";
+			$stmt = $this->oP8PDO->prepare($sTablesListQuery);
+			$stmt->execute();
+			$sTablesList = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+			\Aurora\System\Api::Log("P8 tables list before upgrade: " .  implode(', ', $sTablesList), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		catch (Exception $e)
 		{
@@ -914,9 +915,10 @@ class P7ToP8Migration
 			}
 			catch(Exception $e)
 			{
-				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("Error during rename tables process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
+			\Aurora\System\Api::Log("DAV tables was renamed.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 
 			//Upgrade sabredav data from 1.8 to 3.0 version
 			$aOutput = null;
