@@ -893,6 +893,20 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Delete tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			$this->Output("<pre>Delete tables before moving");
 
+			try
+			{
+				$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$oP8DBName}' ";
+				$stmt = $this->oP8PDO->prepare($sTablesListQuery);
+				$stmt->execute();
+				$sTablesList = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+				\Aurora\System\Api::Log("P8 tables list after delete operation: " .  implode(', ', $sTablesList), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			}
+			catch(Exception $e)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+
 			//Move tables from P7 DB to P8  DB
 			$this->MoveTables();
 			$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
@@ -920,6 +934,12 @@ class P7ToP8Migration
 			}
 			\Aurora\System\Api::Log("DAV tables was renamed.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 
+			if (isset($_GET["stop_before_sabredav_migrate"]))
+			{
+				\Aurora\System\Api::Log("stop_before_sabredav_migrate", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Output("\n stop_before_sabredav_migrate");
+				die();
+			}
 			//Upgrade sabredav data from 1.8 to 3.0 version
 			$aOutput = null;
 			$iStatus = null;
@@ -981,6 +1001,8 @@ class P7ToP8Migration
 				schedulingobjects TO {$sPrefix}schedulingobjects,
 				addressbookchanges TO {$sPrefix}addressbookchanges";
 			$this->oP8PDO->exec($sAddPrefixQuery);
+
+			\Aurora\System\Api::Log("Prefixex was added to DAV-tables.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 
 			//Remove DAV contacts
 			$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
