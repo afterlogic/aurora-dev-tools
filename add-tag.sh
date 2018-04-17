@@ -12,27 +12,48 @@ update_push ()
 	url="${url/$loginWithAt/$emptyString}"
 	resultUrl="${url/$guthubString/$loginWithPassword}"
 	
-	#commit
-	if [ "$3" != "" ]; then
-		git add  -A
-		git commit -m "$3"
-	fi
-	
 	#pull
 	git pull
 	
 	#add tag
-	if [ "$4" != "" ]; then
-		git tag -a "$4" -m ""
+	if [[ "$3" != "" ]]; then
+		git tag -a "$3" -m ""
 	fi
 
 	#push changes
 	git push --repo $resultUrl --tags
 } 
 
+get_next_version ()
+{
+	DESCRIBE=$(git describe --tags $(git rev-list --tags --max-count=1) --abbrev=0);
+
+	# increment the build number (ie 115 to 116)
+	VERSION=`echo $DESCRIBE | awk '{split($0,a,"."); print a[1]}'`
+	BUILD=`echo $DESCRIBE | awk '{split($0,a,"."); print a[2]}'`
+	PATCH=`echo $DESCRIBE | awk '{split($0,a,"."); print a[3]}'`
+
+	if [[ "${DESCRIBE}" =~ ^[0-9]+$ ]]; then
+		VERSION="0.0.0"
+		BUILD=`git rev-list HEAD --count`
+		PATCH=${DESCRIBE}
+	fi
+
+	if [ "${BUILD}" = "" ]; then
+		BUILD='0'
+	fi
+
+	if [ "${BUILD}" = "" ]; then
+		PATCH=$DESCRIBE
+	fi
+	
+	PATCH=$((PATCH+1))
+	
+	next_tag=${VERSION}.${BUILD}.${PATCH}
+}
+
 read -p "GitHub Login: " login
 read -p "GitHub Password: " password
-read -p "Commit message: " commit
 read -p "Tag name: " tag
 
 cd ../modules
@@ -43,7 +64,16 @@ do
     
 	echo ${dir%/*}
 
-	update_push $login $password "$commit" "$tag"
+	if [ "${tag}" = "" ]; then
+		get_next_version
+		new_tag=$next_tag
+	else
+		new_tag=$tag
+	fi
+	
+	echo "${DESCRIBE}\-\>${new_tag}"
+	
+	update_push $login $password "$new_tag"
 
 	echo "";
 
