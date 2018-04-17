@@ -252,6 +252,7 @@ class P7ToP8Migration
 				}
 				else
 				{
+					\Aurora\System\Api::Log("User: {$sP7UserEmail}. Start migration ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$iNewUserId = $this->oP8CoreDecorator->CreateUser(0, $sP7UserEmail, \Aurora\System\Enums\UserRole::NormalUser, false);
 					if (!$iNewUserId)
 					{
@@ -280,12 +281,14 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->Redirect();
 				}
+				\Aurora\System\Api::Log("  Settings migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				//DAV Calendars
 				if (!$this->UpgradeDAVCalendar($oP8User))
 				{
 					\Aurora\System\Api::Log("Error while User calendars creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->Redirect();
 				}
+				\Aurora\System\Api::Log("  DAV-calendar migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				//DOMAIN
 				$oServer = !$oP7Account->Domain->IsDefaultDomain ? $this->GetServerByName($oP7Account->Domain->Name) : false;
 				if (!$oP7Account->Domain->IsDefaultDomain && !$oServer)
@@ -297,6 +300,7 @@ class P7ToP8Migration
 						\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						$this->Redirect();
 					}
+					\Aurora\System\Api::Log("  Server {$oP7Account->Domain->Name} migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 					if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
 					{
@@ -307,12 +311,13 @@ class P7ToP8Migration
 				}
 				//ACCOUNTS
 				$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
+				\Aurora\System\Api::Log("  Accounts IDs: " . implode(', ', $aAccountsId), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				foreach ($aAccountsId as $iP7AccountId)
 				{
 					if (!$this->bFindAccount && $this->oMigrationLog->CurAccountId !== 0 && $iP7AccountId < $this->oMigrationLog->CurAccountId)
 					{
 						//skip Account if already done
-						\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail . " id " . $aAccountsId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						\Aurora\System\Api::Log("Skip Account: " . $sP7UserEmail . " id " . $iP7AccountId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						continue;
 					}
 					else
@@ -478,18 +483,32 @@ class P7ToP8Migration
 	{
 		$bResult = false;
 		$oP7Account = $this->oP7ApiUsersManager->getAccountById($iP7AccountId);
+		\Aurora\System\Api::Log("  Start migrate account: " . $iP7AccountId . ' | ' . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		if (!$oP7Account instanceof \CAccount)
 		{
 			return false;
 		}
 
-		if (!$oServer && $oP7Account->Domain->IdDomain === 0)
+		if (!$oServer || $oP7Account->Domain->IdDomain === 0)
 		{
+			$oP7Account->Domain->IncomingMailServer	= $oP7Account->IncomingMailServer;
+			$oP7Account->Domain->IncomingMailPort		= $oP7Account->IncomingMailPort;
+			$oP7Account->Domain->IncomingMailUseSSL	= $oP7Account->IncomingMailUseSSL;
+
+			$oP7Account->Domain->OutgoingMailServer	= $oP7Account->OutgoingMailServer;
+			$oP7Account->Domain->OutgoingMailPort		= $oP7Account->OutgoingMailPort;
+			$oP7Account->Domain->OutgoingMailUseSSL	= $oP7Account->OutgoingMailUseSSL;
+			$oP7Account->Domain->OutgoingMailAuth		= $oP7Account->OutgoingMailAuth;
+
 			$iServerId = $this->DomainP7ToP8($oP7Account->Domain);
 			if (!$iServerId)
 			{
 				\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->IncomingMailServer, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				$this->Redirect();
+			}
+			else
+			{
+				\Aurora\System\Api::Log("  Server {$oP7Account->Domain->Name} migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 			$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 		}
@@ -499,6 +518,7 @@ class P7ToP8Migration
 		if ($this->oMigrationLog->CurAccountId === $iP7AccountId)
 		{
 			$oP8Account = $this->oP8MailModule->oApiAccountsManager->getAccountById($this->oMigrationLog->NewAccountId);
+			\Aurora\System\Api::Log("  Account already exists." . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		else
 		{
@@ -512,6 +532,10 @@ class P7ToP8Migration
 			);
 			$this->oMigrationLog->CurIdentitiesId = 0;
 			$this->oMigrationLog->NewIdentitiesId = 0;
+			if ($oP8Account)
+			{
+				\Aurora\System\Api::Log("  Account created successfully. Account: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			}
 		}
 
 		if ($oP8Account)
@@ -544,6 +568,10 @@ class P7ToP8Migration
 				{
 					\Aurora\System\Api::Log("Error while setup system folders: ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				}
+				else
+				{
+					\Aurora\System\Api::Log("  System folders setup successfully. Account: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				}
 			}
 
 			$this->oMigrationLog->CurAccountId = $iP7AccountId;
@@ -554,11 +582,13 @@ class P7ToP8Migration
 		{
 			$bResult = $this->IdentitiesP7ToP8($iP7AccountId, $oP8Account);
 		}
+		\Aurora\System\Api::Log("  End migrate account: " . $iP7AccountId . ' | ' . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		return $bResult;
 	}
 
 	public function SocialAccountsP7ToP8($iP7AccountId, \Aurora\Modules\Core\Classes\User $oP8User)
 	{
+		\Aurora\System\Api::Log("  Sart migrate for Social accounts.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$aSocials = $this->oP7ApiSocial->getSocials($iP7AccountId);
 		if (is_array($aSocials))
 		{
@@ -597,11 +627,16 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->Redirect();
 				}
+				else
+				{
+					\Aurora\System\Api::Log("  Social Account {$oSocial->Name}|{$oSocial->Email} was created successfully.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				}
 				$this->oMigrationLog->CurSocialAccountId = $oSocial->Id;
 				$this->oMigrationLog->NewSocialAccountId = $oP8NewSocialAccount->EntityId;
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 			}
 		}
+		\Aurora\System\Api::Log("  End migrate for Social accounts.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		return true;
 	}
 
@@ -611,6 +646,7 @@ class P7ToP8Migration
 		$aAccountIdentities = $this->oP7ApiUsersManager->getAccountIdentities($iP7AccountId);
 		if (is_array($aAccountIdentities) && count($aAccountIdentities) > 0)
 		{
+			\Aurora\System\Api::Log(" Start Identities migration. Account: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			foreach ($aAccountIdentities as $oP7Identity)
 			{
 				if (!$this->bFindIdentity && $this->oMigrationLog->CurIdentitiesId !== 0 && $oP7Identity->IdIdentity < $this->oMigrationLog->CurIdentitiesId)
@@ -647,12 +683,16 @@ class P7ToP8Migration
 								$oP7Identity->Email,
 								true
 							);
-					}
+						}
 					}
 					if (!$iP8EntityId)
 					{
 						\Aurora\System\Api::Log("Error while Identity creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						return false;
+					}
+					else
+					{
+						\Aurora\System\Api::Log("  Account: " . $oP8Account->Email . " Identity {$oP7Identity->Email}|{$oP7Identity->FriendlyName} was migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					}
 					$this->oMigrationLog->CurIdentitiesId = $oP7Identity->IdIdentity;
 					$this->oMigrationLog->NewIdentitiesId = $iP8EntityId;
@@ -666,9 +706,14 @@ class P7ToP8Migration
 							\Aurora\System\Api::Log("Error while Signature creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 							return $bResult;
 						}
+						else
+						{
+							\Aurora\System\Api::Log("  Account: " . $oP8Account->Email . " Signature {$oP7Identity->Email}|{$oP7Identity->Signature} was migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						}
 					}
 				}
 			}
+			\Aurora\System\Api::Log(" End Identities migration. Account: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		else
 		{
@@ -734,10 +779,13 @@ class P7ToP8Migration
 		foreach ($oP7Contact->GroupsIds as $iGroupId)
 		{
 			$oP7Group = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $iGroupId);
-			$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name, $oP8User->EntityId);
-			if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
+			if ($oP7Group)
 			{
-				$aContactOptions["GroupUUIDs"][] = $oP8Group->UUID;
+				$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name, $oP8User->EntityId);
+				if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
+				{
+					$aContactOptions["GroupUUIDs"][] = $oP8Group->UUID;
+				}
 			}
 		}
 
