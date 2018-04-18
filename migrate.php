@@ -310,7 +310,8 @@ class P7ToP8Migration
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
 				//ACCOUNTS
-				$aAccountsId = $this->oP7ApiUsersManager->getAccountIdList($iP7UserId);
+				$aAccounts = $this->oP7ApiUsersManager->getUserAccounts($iP7UserId);
+				$aAccountsId = array_keys($aAccounts);
 				\Aurora\System\Api::Log("  Accounts IDs: " . implode(', ', $aAccountsId), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				foreach ($aAccountsId as $iP7AccountId)
 				{
