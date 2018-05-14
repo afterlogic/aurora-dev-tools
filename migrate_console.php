@@ -78,7 +78,17 @@ class P7ToP8Migration
 	public function Init($aOptions)
 	{
 		$this->oP7Settings = \CApi::GetSettings();
+		if (!$this->oP7PDO instanceof PDO)
+		{
+			\Aurora\System\Api::Log("Error during connection to p7 DB.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			exit("Error during connection to p7 DB.");
+		}
 		$this->oP8PDO = \Aurora\System\Api::GetPDO();
+		if (!$this->oP8PDO instanceof \PDO)
+		{
+			\Aurora\System\Api::Log("Error during connection to p8 DB.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			exit("Error during connection to p8 DB.");
+		}
 		$this->oP8Settings = \Aurora\System\Api::GetSettings();
 
 		/* @var $oP7ApiDomainsManager CApiDomainsManager */
@@ -1309,7 +1319,6 @@ class P7ToP8Migration
 
 	public function MoveTables()
 	{
-		$this->oP7PDO = \CApi::GetPDO();
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 
 		$aTables = [
