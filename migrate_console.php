@@ -1030,7 +1030,7 @@ class P7ToP8Migration
 				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
-			\Aurora\System\Api::Log("Migrate from a pre-3.3 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			\Aurora\System\Api::Log("Migrate from a pre-3.0 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			$this->Output(implode("\n", $aOutput));
 			$this->Output("\n-----------------------------------------------");
 		}
@@ -1061,6 +1061,10 @@ class P7ToP8Migration
 			//Remove DAV contacts
 			$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
 			$this->oP8PDO->exec($sTruncateQuery);
+
+			//fix problem with shared calendars in p8
+			$sTruncateCalendarsharesQuery = "TRUNCATE {$sPrefix}calendarshares;";
+			$this->oP8PDO->exec($sTruncateCalendarsharesQuery);
 
 			//Drop backup tables
 			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%'";
