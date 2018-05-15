@@ -293,13 +293,6 @@ class P7ToP8Migration
 					$this->Redirect();
 				}
 				\Aurora\System\Api::Log("  Settings migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				//DAV Calendars
-				if (!$this->UpgradeDAVCalendar($oP8User))
-				{
-					\Aurora\System\Api::Log("Error while User calendars creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
-				}
-				\Aurora\System\Api::Log("  DAV-calendar migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				//DOMAIN
 				$oServer = !$oP7Account->Domain->IsDefaultDomain ? $this->GetServerByName($oP7Account->Domain->Name) : false;
 				if (!$oP7Account->Domain->IsDefaultDomain && !$oServer)
@@ -857,24 +850,26 @@ class P7ToP8Migration
 		$aSieveDomains = array_map('strtolower', $aSieveDomains);
 		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
 
-		$iServerId = $this->oP8MailModule->oApiServersManager->CreateServer(
-			$oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name,
-			$oDomain->IncomingMailServer,
-			$oDomain->IncomingMailPort,
-			$oDomain->IncomingMailUseSSL,
-			$oDomain->OutgoingMailServer,
-			$oDomain->OutgoingMailPort,
-			$oDomain->OutgoingMailUseSSL,
-			$oDomain->OutgoingMailAuth,
-			$oDomain->IdDomain === 0 ? '*' : $oDomain->Name, //Domains
-			$oDomain->UseThreads, //EnableThreading
-			$oDomain->OutgoingMailLogin,
-			$oDomain->OutgoingMailPassword,
-			$bSieveEnabled, //EnableSieve
-			$iSievePort, //SievePort
-			$oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin,
-			0 //TenantId
-		);
+		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModuleDecorator->GetName());
+		$oServer->OwnerType = $oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin;
+		$oServer->TenantId = 0;
+		$oServer->Name = $oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name;
+		$oServer->IncomingServer = $oDomain->IncomingMailServer;
+		$oServer->IncomingPort = $oDomain->IncomingMailPort;
+		$oServer->IncomingUseSsl = $oDomain->IncomingMailUseSSL;
+		$oServer->OutgoingServer = $oDomain->OutgoingMailServer;
+		$oServer->OutgoingPort = $oDomain->OutgoingMailPort;
+		$oServer->OutgoingUseSsl = $oDomain->OutgoingMailUseSSL;
+		$oServer->SmtpAuthType = $oDomain->OutgoingMailAuth;
+		$oServer->SmtpLogin = $oDomain->OutgoingMailLogin;
+		$oServer->SmtpPassword = $oDomain->OutgoingMailPassword;
+		$oServer->Domains = $oDomain->IdDomain === 0 ? '*' : $oDomain->Name;
+		$oServer->EnableThreading = $oDomain->UseThreads;
+		$oServer->EnableSieve = $bSieveEnabled;
+		$oServer->SievePort = $iSievePort;
+		$oServer->UseFullEmailAddressAsLogin = false;
+
+		$iServerId = $this->oP8MailModule->oApiServersManager->createServer($oServer);
 		return $iServerId ? $iServerId : false;
 	}
 
@@ -1000,7 +995,7 @@ class P7ToP8Migration
 				$this->Output("\n stop_before_sabredav_migrate");
 				die();
 			}
-			//Upgrade sabredav data from 1.8 to 3.0 version
+			//Upgrade sabredav data from 1.8 to 3.2 version
 			$aOutput = null;
 			$iStatus = null;
 			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
@@ -1039,6 +1034,19 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Migrate from a pre-3.0 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			$this->Output(implode("\n", $aOutput));
 			$this->Output("\n-----------------------------------------------");
+
+			unset($aOutput);
+			unset($iStatus);
+			$sUpgrade30To32 = "php ../vendor/sabre/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			exec($sUpgrade30To32, $aOutput, $iStatus);
+			if ($iStatus !== 0)
+			{
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.2 database to 3.2.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				return false;
+			}
+			\Aurora\System\Api::Log("Migrate from a pre-3.2 database to 3.2." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output(implode("\n", $aOutput));
+			$this->Output("\n-----------------------------------------------");
 		}
 
 		try
@@ -1059,7 +1067,8 @@ class P7ToP8Migration
 				calendarsubscriptions TO {$sPrefix}calendarsubscriptions,
 				propertystorage TO {$sPrefix}propertystorage,
 				schedulingobjects TO {$sPrefix}schedulingobjects,
-				addressbookchanges TO {$sPrefix}addressbookchanges";
+				addressbookchanges TO {$sPrefix}addressbookchanges,
+				calendarinstances TO {$sPrefix}calendarinstances";
 			$this->oP8PDO->exec($sAddPrefixQuery);
 
 			\Aurora\System\Api::Log("Prefixex was added to DAV-tables.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1073,7 +1082,7 @@ class P7ToP8Migration
 			$this->oP8PDO->exec($sTruncateCalendarsharesQuery);
 
 			//Drop backup tables
-			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%'";
+			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%' OR `Tables_in_{$oP8DBName}` LIKE 'calendars_%' ";
 			$stmt = $this->oP8PDO->prepare($sGetBackupTablesNamesQuery);
 			$stmt->execute();
 			$aBackupTablesNames = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
@@ -1092,26 +1101,6 @@ class P7ToP8Migration
 		}
 
 		$this->Output("DB upgraded");
-		return true;
-	}
-
-	public function UpgradeDAVCalendar(\Aurora\Modules\Core\Classes\User $oP8User)
-	{
-		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
-		try
-		{
-			$sCalendarUpdateQuery = "UPDATE `{$oP8DBPrefix}adav_calendars` 
-					SET `principaluri`= 'principals/{$oP8User->PublicId}'
-					WHERE `principaluri` = 'principals/{$oP8User->PublicId}'";
-			$stmt = $this->oP8PDO->prepare($sCalendarUpdateQuery);
-			$stmt->execute();
-			$stmt->closeCursor();
-		}
-		catch(Exception $e)
-		{
-			\Aurora\System\Api::Log("Error during calendars migration process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			return false;
-		}
 		return true;
 	}
 
