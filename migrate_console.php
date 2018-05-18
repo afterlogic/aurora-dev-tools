@@ -8,7 +8,7 @@
  * 3 - check that "user_list" file was successfully created and contains list of users
  * 4 - run the script to start migration process
  * 5 - The migration process is described in detail at:
- * https://afterlogic.com/docs/webmail-pro-8/installation/migration-from-v7
+ * https://afterlogic.com/docs/webmail-pro-8/installation/migration-from-v7-console-tool
  * 
  * php migrate_console.php --stop_before_sabredav
  * php migrate_console.php --skip_sabredav
