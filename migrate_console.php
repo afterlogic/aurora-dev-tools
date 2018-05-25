@@ -939,7 +939,9 @@ class P7ToP8Migration
 				`{$oP8DBPrefix}adav_principals`,
 				`{$oP8DBPrefix}adav_propertystorage`,
 				`{$oP8DBPrefix}adav_reminders`,
-				`{$oP8DBPrefix}adav_schedulingobjects`";
+				`{$oP8DBPrefix}adav_schedulingobjects`,
+				`{$oP8DBPrefix}adav_calendarinstances`
+			";
 
 			try
 			{
@@ -1042,7 +1044,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/sabre/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" \"\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{

@@ -11,6 +11,7 @@
  * https://afterlogic.com/docs/webmail-pro-8/installation/migration-from-v7
  */
 $sPassword = "";
+$sEnteredPassword = isset($_GET['pass']) ? $_GET['pass'] : "";
 $sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
@@ -19,7 +20,7 @@ if (!file_exists($sP7ApiPath))
 {
 	exit("Wrong path for import");
 }
-if (!(isset($_GET['pass']) && $sPassword !== '' && $sPassword === $_GET['pass']))
+if (($sEnteredPassword || $sPassword) && $sPassword !== $sEnteredPassword)
 {
 	exit("Wrong password");
 }
@@ -934,7 +935,9 @@ class P7ToP8Migration
 				`{$oP8DBPrefix}adav_principals`,
 				`{$oP8DBPrefix}adav_propertystorage`,
 				`{$oP8DBPrefix}adav_reminders`,
-				`{$oP8DBPrefix}adav_schedulingobjects`";
+				`{$oP8DBPrefix}adav_schedulingobjects`,
+				`{$oP8DBPrefix}adav_calendarinstances`
+			";
 
 			try
 			{
@@ -1037,7 +1040,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/sabre/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" \"\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
