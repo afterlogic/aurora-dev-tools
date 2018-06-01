@@ -54,6 +54,7 @@ class P7ToP8Migration
 	public $oP8MailModule = null;
 	public $oP8MailModuleDecorator = null;
 	public $oP8OAuthIntegratorWebclientModule = null;
+	public $oP8CalendarModuleDecorator = null;
 
 	public $sMigrationLogFile = null;
 	public $sUserListFile = null;
@@ -111,6 +112,7 @@ class P7ToP8Migration
 		$this->oP8MailModule = $oP8MailModule;
 		$this->oP8MailModuleDecorator = $oP8MailModule::Decorator();
 		$this->oP8OAuthIntegratorWebclientModule = \Aurora\System\Api::GetModule("OAuthIntegratorWebclient");
+		$this->oP8CalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
@@ -439,6 +441,8 @@ class P7ToP8Migration
 				$this->Output("Processed " . $iContactsCount . " contacts from " . count($aContactListItems));
 			}
 			fclose($rUserListHandle);
+			//SHARED CALENDARS
+			$this->MigrateSharedCalendars();
 		}
 		\Aurora\System\Api::Log("Users were migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$this->Output("Users were migrated");
@@ -931,7 +935,6 @@ class P7ToP8Migration
 				`{$oP8DBPrefix}adav_calendarchanges`,
 				`{$oP8DBPrefix}adav_calendarobjects`,
 				`{$oP8DBPrefix}adav_calendars`,
-				`{$oP8DBPrefix}adav_calendarshares`,
 				`{$oP8DBPrefix}adav_calendarsubscriptions`,
 				`{$oP8DBPrefix}adav_cards`,
 				`{$oP8DBPrefix}adav_groupmembers`,
@@ -978,7 +981,6 @@ class P7ToP8Migration
 				{$oP7DBPrefix}adav_cache TO cache,
 				{$oP7DBPrefix}adav_calendarobjects TO calendarobjects,
 				{$oP7DBPrefix}adav_calendars TO calendars,
-				{$oP7DBPrefix}adav_calendarshares TO calendarshares,
 				{$oP7DBPrefix}adav_cards TO cards,
 				{$oP7DBPrefix}adav_groupmembers TO groupmembers,
 				{$oP7DBPrefix}adav_locks TO locks,
@@ -1064,7 +1066,6 @@ class P7ToP8Migration
 				cache TO {$sPrefix}cache,
 				calendarobjects TO {$sPrefix}calendarobjects,
 				calendars TO {$sPrefix}calendars,
-				calendarshares TO {$sPrefix}calendarshares,
 				cards TO {$sPrefix}cards,
 				groupmembers TO {$sPrefix}groupmembers,
 				locks TO {$sPrefix}locks,
@@ -1083,10 +1084,6 @@ class P7ToP8Migration
 			//Remove DAV contacts
 			$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
 			$this->oP8PDO->exec($sTruncateQuery);
-
-			//fix problem with shared calendars in p8
-			$sTruncateCalendarsharesQuery = "TRUNCATE {$sPrefix}calendarshares;";
-			$this->oP8PDO->exec($sTruncateCalendarsharesQuery);
 
 			//Drop backup tables
 			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%' OR `Tables_in_{$oP8DBName}` LIKE 'calendars_%' ";
@@ -1318,7 +1315,6 @@ class P7ToP8Migration
 			"adav_cache",
 			"adav_calendarobjects",
 			"adav_calendars",
-			"adav_calendarshares",
 			"adav_cards",
 			"adav_groupmembers",
 			"adav_locks",
@@ -1377,6 +1373,77 @@ class P7ToP8Migration
 				return false;
 			}
 		}
+	}
+
+	public function MigrateSharedCalendars()
+	{
+		$this->Output("MigrateSharedCalendars");
+
+		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+
+		$sSelectAllSharedCalendarsQuery = "
+			SELECT
+				{$oP7DBPrefix}adav_calendarshares.*,
+				prncpl.uri AS member_principal,
+				prncpl.displayname AS member_displayname,
+				clndr.uri AS calendar_uri,
+				clndr.principaluri AS owner_principaluri
+			FROM {$oP7DBPrefix}adav_calendarshares
+			LEFT JOIN {$oP7DBPrefix}adav_principals AS prncpl on prncpl.id = {$oP7DBPrefix}adav_calendarshares.member
+			LEFT JOIN {$oP7DBPrefix}adav_calendars AS clndr on clndr.id = {$oP7DBPrefix}adav_calendarshares.calendarid
+			WHERE prncpl.uri IS NOT NULL
+		";
+		$stmt = $this->oP7PDO->prepare($sSelectAllSharedCalendarsQuery);
+		$stmt->execute();
+		$aSharedCalendars = $stmt->fetchAll(PDO::FETCH_ASSOC);
+		foreach ($aSharedCalendars as $aSharedCalendar)
+		{
+			$sUserPublicId = str_replace('principals/', '', $aSharedCalendar['member_principal']);
+			$sOwnerPublicId = str_replace('principals/', '', $aSharedCalendar['owner_principaluri']);
+			$sCalendarUri = $aSharedCalendar['calendar_uri'];
+			$oOwner = $this->oP8CoreDecorator->GetUserByPublicId($sOwnerPublicId);
+			if ($oOwner instanceof \Aurora\Modules\Core\Classes\User)
+			{
+				if ($sUserPublicId === 'default_dav_tenant_user@localhost')
+				{//shared with all
+					$this->oP8CalendarModuleDecorator->UpdateCalendarShare(
+						$oOwner->EntityId,
+						$sCalendarUri,
+						/*IsPublic*/0,
+						/*Shares*/	json_encode([]),
+						/*ShareToAll*/true,
+						/*ShareToAllAccess*/$aSharedCalendar['readonly'] ? \Aurora\Modules\Calendar\Enums\Permission::Read : \Aurora\Modules\Calendar\Enums\Permission::Write
+					);
+				}
+				else if ($sUserPublicId === 'caldav_public_user@localhost')
+				{//publick
+					$this->oP8CalendarModuleDecorator->UpdateCalendarPublic(
+						$sCalendarUri,
+						true,
+						$oOwner->EntityId
+					);
+				}
+				else
+				{
+					$aShares = [[
+						'name' => $aSharedCalendar['member_displayname'],
+						'email' => $sUserPublicId,
+						'access' => $aSharedCalendar['readonly'] ? \Aurora\Modules\Calendar\Enums\Permission::Read : \Aurora\Modules\Calendar\Enums\Permission::Write
+					]];
+					$this->oP8CalendarModuleDecorator->UpdateCalendarShare(
+						$oOwner->EntityId,
+						$sCalendarUri,
+						/*IsPublic*/0,
+						/*Shares*/
+						json_encode($aShares),
+						/*ShareToAll*/false,
+						/*ShareToAllAccess*/\Aurora\Modules\Calendar\Enums\Permission::Read
+					);
+				}
+			}
+		}
+		$this->Output("Shared calendars migrated");
+		\Aurora\System\Api::Log("Shared calendars migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
 }
 
