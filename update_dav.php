@@ -1,8 +1,14 @@
 <?php
 /*
  * Update table `adav_calendarinstances` after updating dav from v3.0 to v3.2
+ *  example "http://your-webmail-v8-domain/dev/update_dav.php?pass=12345"
  */
 set_time_limit(0);
+$sPassword = "";
+if (!(isset($_GET['pass']) && $sPassword !== '' && $sPassword === $_GET['pass']))
+{
+	exit("Update script password is incorrect or not set.");
+}
 require_once "../system/autoload.php";
 \Aurora\System\Api::Init(true);
 
