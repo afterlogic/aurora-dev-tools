@@ -1084,6 +1084,10 @@ class P7ToP8Migration
 			//Remove DAV contacts
 			$sTruncateQuery = "TRUNCATE {$sPrefix}addressbooks; TRUNCATE {$sPrefix}cards;";
 			$this->oP8PDO->exec($sTruncateQuery);
+			//Drop 'principals' table
+			$sDropPrincipalsTablesQuery = "DROP TABLE IF EXISTS {$sPrefix}principals";
+			$this->oP8PDO->exec($sDropPrincipalsTablesQuery);
+			\Aurora\System\Api::Log("Drop 'principals' tables: " .  $sDropPrincipalsTablesQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 
 			//Drop backup tables
 			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%' OR `Tables_in_{$oP8DBName}` LIKE 'calendars_%' ";
@@ -1377,7 +1381,7 @@ class P7ToP8Migration
 
 	public function MigrateSharedCalendars()
 	{
-		$this->Output("MigrateSharedCalendars");
+		$this->Output("Start migration of shared calendars.");
 
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 
