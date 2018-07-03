@@ -41,6 +41,7 @@ class Update
 		$this->Migrate30();
 		$this->Migrate32();
 		$this->UpgradePrincipals();
+		$this->MigratePublicCalendars();
 	}
 
 	public function UpgradeDAVData(\Aurora\Modules\Core\Classes\User $oUser, $CalendarName)
@@ -146,7 +147,7 @@ class Update
 		foreach(['calendar', 'addressbook'] as $itemType) {
 
 			$tableName = $prefix . $itemType . 's';
-			$tableNameOld = $tableName . '_old';
+			$tableNameOld = $tableName . '_old' . mt_rand(1000,9999);
 			$changesTable = $prefix . $itemType . 'changes';
 
 			echo "Upgrading '$tableName'\n";
@@ -359,7 +360,7 @@ class Update
 
 				case 'mysql' :
 					$pdo->exec("
-						CREATE TABLE {$prefix}propertystorage (
+						CREATE TABLE  IF NOT EXISTS {$prefix}propertystorage (
 							id INT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT,
 							path VARBINARY(1024) NOT NULL,
 							name VARBINARY(100) NOT NULL,
@@ -412,7 +413,7 @@ class Update
 			switch($driver) {
 				case 'mysql' :
 					$pdo->exec("
-						CREATE TABLE {$prefix}cards (
+						CREATE TABLE IF NOT EXISTS {$prefix}cards (
 							id INT(11) UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT,
 							addressbookid INT(11) UNSIGNED NOT NULL,
 							carddata MEDIUMBLOB,
@@ -925,6 +926,51 @@ class Update
 			);
 		}
 		echo "Upgrade to 3.2 schema completed.\n\n";
+		ob_flush();
+		flush();
+	}
+
+	public function MigratePublicCalendars()
+	{
+		echo "Public calendars migration started.\n";
+		\Aurora\System\Api::Log("Public calendars migration.", \Aurora\System\Enums\LogLevel::Full, 'update-');
+		$prefix = $this->oSettings->GetConf('DBPrefix');
+		$oCalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
+
+		$sSelectAllSharedCalendarsQuery = "
+			SELECT
+				{$prefix}adav_calendarshares.*,
+				{$prefix}adav_calendarshares.principaluri AS member_principal,
+				calendarinstances.uri AS calendar_uri,
+				calendarinstances.principaluri AS owner_principaluri
+			FROM {$prefix}adav_calendarshares
+			LEFT JOIN {$prefix}adav_calendarinstances AS calendarinstances on calendarinstances.id = {$prefix}adav_calendarshares.calendarid
+			WHERE {$prefix}adav_calendarshares.principaluri IS NOT NULL
+		";
+
+		$stmt = $this->oPDO->prepare($sSelectAllSharedCalendarsQuery);
+		$stmt->execute();
+		$aSharedCalendars = $stmt->fetchAll(PDO::FETCH_ASSOC);
+		foreach ($aSharedCalendars as $aSharedCalendar)
+		{
+			$sUserPublicId = str_replace('principals/', '', $aSharedCalendar['member_principal']);
+			$sOwnerPublicId = str_replace('principals/', '', $aSharedCalendar['owner_principaluri']);
+			$sCalendarUri = $aSharedCalendar['calendar_uri'];
+			$oOwner = $this->oCoreDecorator->GetUserByPublicId($sOwnerPublicId);
+			if ($oOwner instanceof \Aurora\Modules\Core\Classes\User)
+			{
+				if ($sUserPublicId === 'caldav_public_user@localhost')
+				{//publick
+					$oCalendarModuleDecorator->UpdateCalendarPublic(
+						$sCalendarUri,
+						true,
+						$oOwner->EntityId
+					);
+				}
+			}
+		}
+		echo "Public calendars migrated\n";
+		\Aurora\System\Api::Log("Public calendars migrated", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		ob_flush();
 		flush();
 	}
