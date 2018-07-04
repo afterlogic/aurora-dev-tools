@@ -11,6 +11,14 @@ if (PHP_SAPI !== 'cli' && !(isset($_GET['pass']) && $sPassword !== '' && $sPassw
 }
 require_once "../system/autoload.php";
 \Aurora\System\Api::Init(true);
+function myErrorHandler($errno, $errstr, $errfile, $errline)
+{
+	$sErrorMessage = "[{$errno}] {$errstr} in {$errfile}  on line {$errline}";
+	echo $sErrorMessage;
+	\Aurora\System\Api::Log($sErrorMessage, \Aurora\System\Enums\LogLevel::Full, 'update-');
+	return false;
+}
+set_error_handler("myErrorHandler");
 
 class Update
 {
@@ -20,10 +28,11 @@ class Update
 
 	public function Init()
 	{
+		\Aurora\System\Api::Log("Update DAV: Init ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$this->oPDO = \Aurora\System\Api::GetPDO();
 		if (!$this->oPDO instanceof \PDO)
 		{
-			\Aurora\System\Api::Log("Error during connection to p8 DB.", \Aurora\System\Enums\LogLevel::Full);
+			\Aurora\System\Api::Log("Error during connection to p8 DB.", \Aurora\System\Enums\LogLevel::Full, 'update-');
 			exit("Error during connection to 8 DB.");
 		}
 		$this->oSettings = \Aurora\System\Api::GetSettings();
@@ -32,6 +41,7 @@ class Update
 
 	public function Start()
 	{
+		\Aurora\System\Api::Log("Update DAV: Start ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		if (PHP_SAPI !== 'cli')
 		{
 			echo "<pre>";
@@ -66,6 +76,7 @@ class Update
 
 	public function UpgradePrincipals()
 	{
+		\Aurora\System\Api::Log("Update DAV: Upgrade principals", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		foreach (['calendarinstances', 'addressbooks'] as $tablename)
 		{
 			echo "\nStart UpgradePrincipals in {$tablename} table\n";
@@ -124,6 +135,7 @@ class Update
 
 	public function Migrate20()
 	{
+		\Aurora\System\Api::Log("Update DAV: Migrate20 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
 		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
 		$dbname = $this->oSettings->GetConf('DBName');
@@ -496,8 +508,10 @@ class Update
 
 	public function Migrate21()
 	{
+		\Aurora\System\Api::Log("Update DAV: Migrate21 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
 		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
+		$dbname = $this->oSettings->GetConf('DBName');
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
@@ -542,7 +556,17 @@ class Update
 
 			switch($driver) {
 				case 'mysql' :
-					$pdo->exec('ALTER TABLE ' . $prefix . 'calendarobjects ADD uid VARCHAR(200)');
+					$row = (int) $pdo->query("SELECT count(*)
+						FROM information_schema.COLUMNS
+						WHERE
+							TABLE_SCHEMA = '{$dbname}'
+						AND TABLE_NAME = '{$prefix}calendarobjects'
+						AND COLUMN_NAME = 'uid'
+					")->fetchColumn();
+					if (!$row)
+					{
+						$pdo->exec('ALTER TABLE ' . $prefix . 'calendarobjects ADD uid VARCHAR(200)');
+					}
 					break;
 				case 'sqlite' :
 					$pdo->exec('ALTER TABLE ' . $prefix . 'calendarobjects ADD uid TEXT');
@@ -619,6 +643,7 @@ class Update
 
 	public function Migrate30()
 	{
+		\Aurora\System\Api::Log("Update DAV: Migrate30 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
 		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -732,6 +757,7 @@ class Update
 
 	public function Migrate32()
 	{
+		\Aurora\System\Api::Log("Update DAV: Migrate32 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$backupPostfix = time();
 		$pdo = $this->oPDO;
 		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
@@ -932,6 +958,7 @@ class Update
 
 	public function MigratePublicCalendars()
 	{
+		\Aurora\System\Api::Log("Update DAV: Public calendars migration started", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		echo "Public calendars migration started.\n";
 		\Aurora\System\Api::Log("Public calendars migration.", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$prefix = $this->oSettings->GetConf('DBPrefix');
@@ -969,6 +996,7 @@ class Update
 				}
 			}
 		}
+		\Aurora\System\Api::Log("Update DAV: Public calendars migrated", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		echo "Public calendars migrated\n";
 		\Aurora\System\Api::Log("Public calendars migrated", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		ob_flush();
@@ -978,8 +1006,17 @@ class Update
 ob_start();
 $oUpdate = new Update();
 
-$oUpdate->Init();
-$oUpdate->Start();
+try
+{
+	$oUpdate->Init();
+	$oUpdate->Start();
+}
+catch (Exception $e)
+{
+	echo "Exception: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine();
+	\Aurora\System\Api::Log("Exception: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine(), \Aurora\System\Enums\LogLevel::Full, 'update-');
+	exit();
+}
 
 ob_end_flush();
 exit("Done");
