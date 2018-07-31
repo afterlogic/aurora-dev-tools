@@ -59,6 +59,21 @@ class Update
 		$oDBPrefix = $this->oSettings->GetConf('DBPrefix');
 		try
 		{
+			$sCalendarCheckPrincipal = "SELECT count(*)
+					FROM `{$oDBPrefix}adav_{$CalendarName}`
+					WHERE `principaluri` = 'principals/{$oUser->PublicId}'";
+			$stmt = $this->oPDO->prepare($sCalendarCheckPrincipal);
+			$stmt->execute();
+			$iCheckPrincipal = (int) $stmt->fetchColumn();
+
+			if ($iCheckPrincipal > 0)
+			{//remove old email-principals if exists
+				$sCalendarRemovePrincipal = "DELETE
+					FROM `{$oDBPrefix}adav_{$CalendarName}`
+					WHERE `principaluri` = 'principals/{$oUser->PublicId}'";
+				$stmt = $this->oPDO->prepare($sCalendarRemovePrincipal);
+				$stmt->execute();
+			}
 			$sCalendarUpdateQuery = "UPDATE `{$oDBPrefix}adav_{$CalendarName}`
 					SET `principaluri`= 'principals/{$oUser->PublicId}'
 					WHERE `principaluri` = 'principals/{$oUser->UUID}'";
