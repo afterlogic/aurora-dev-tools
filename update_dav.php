@@ -977,8 +977,25 @@ class Update
 		echo "Public calendars migration started.\n";
 		\Aurora\System\Api::Log("Public calendars migration.", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$prefix = $this->oSettings->GetConf('DBPrefix');
+		$dbname = $this->oSettings->GetConf('DBName');
 		$oCalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
-
+		//check if 'calendarshares' table xists
+		$sCheckCalendarsharesQuery = "
+			SELECT 1
+				FROM INFORMATION_SCHEMA.TABLES
+				WHERE TABLE_TYPE='BASE TABLE'
+				AND TABLE_SCHEMA = '{$dbname}'
+				AND TABLE_NAME='{$prefix}adav_calendarshares'
+		";
+		$row = (int) $this->oPDO->query($sCheckCalendarsharesQuery)->fetchColumn();
+		if (!$row)
+		{
+			\Aurora\System\Api::Log("Skip public calendars migration. '{$prefix}adav_calendarshares' table or view not found.", \Aurora\System\Enums\LogLevel::Full, 'update-');
+			echo "Skip public calendars migration. '{$prefix}adav_calendarshares' table or view not found.\n";
+			ob_flush();
+			flush();
+			return false;
+		}
 		$sSelectAllSharedCalendarsQuery = "
 			SELECT
 				{$prefix}adav_calendarshares.*,
