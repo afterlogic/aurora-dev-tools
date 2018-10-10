@@ -16,10 +16,11 @@
 $sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
-$aLongopts  = [
+$aLongopts = [
 	"user_list",
 	"skip_sabredav",
-	"stop_before_sabredav"
+	"stop_before_sabredav",
+	"mta_mode"
 ];
 $aOptions = getopt(null, $aLongopts);
 
@@ -37,6 +38,7 @@ class P7ToP8Migration
 {
 	//Number of unsuccessful attempts after which user will be skipped
 	const ATTEMPTS_MAX_NUMBER = 3;
+	const QUOTA_KILO_MULTIPLIER = 1024;
 
 	public $oP7Settings = false;
 	public $oP7PDO = false;
@@ -55,6 +57,7 @@ class P7ToP8Migration
 	public $oP8MailModuleDecorator = null;
 	public $oP8OAuthIntegratorWebclientModule = null;
 	public $oP8CalendarModuleDecorator = null;
+	public $oP8MtaConnectorModule = null;
 
 	public $sMigrationLogFile = null;
 	public $sUserListFile = null;
@@ -69,12 +72,15 @@ class P7ToP8Migration
 	public $bFindContact = false;
 	public $bFindGroupContact = false;
 	public $bFindSocial = false;
+	public $bFindFetcher = false;
 
 	public $sP7UserFiles = null;
 	public $sP8UserFiles = null;
 
 	public $bSkipSabredav = false;
 	public $bStopBeforeSabredav = false;
+
+	public $iP8TenantId = 0;
 
 	public function Init($aOptions)
 	{
@@ -113,6 +119,10 @@ class P7ToP8Migration
 		$this->oP8MailModuleDecorator = $oP8MailModule::Decorator();
 		$this->oP8OAuthIntegratorWebclientModule = \Aurora\System\Api::GetModule("OAuthIntegratorWebclient");
 		$this->oP8CalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
+		if (isset($aOptions["mta_mode"]))
+		{
+			$this->oP8MtaConnectorModule = \Aurora\System\Api::GetModule("MtaConnector");
+		}
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
 		{
@@ -153,7 +163,8 @@ class P7ToP8Migration
 				'NewSocialAccountId' => 0,
 				'UsersMigrated' => 0,
 				'DomainsMigrated' => 0,
-				'FilesMigrated' => 0
+				'FilesMigrated' => 0,
+				'CurFetcherId' => 0
 			];
 		}
 
@@ -255,13 +266,13 @@ class P7ToP8Migration
 				if (!$oP7Account instanceof \CAccount)
 				{
 					\Aurora\System\Api::Log("Error. Account not found. " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 
 				if (!$oP7Account instanceof \CAccount)
 				{
 					\Aurora\System\Api::Log("Error. User not found:  " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 				$iP7UserId = $oP7Account->IdUser;
 				$oP8User = $this->oP8CoreDecorator->GetUserByPublicId($sP7UserEmail);
@@ -276,13 +287,39 @@ class P7ToP8Migration
 					if (!$iNewUserId)
 					{
 						\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
+					}
+					if ($this->oP8MtaConnectorModule)
+					{
+						$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($oP7Account->Domain->Name);
+						if (!$aMtaDomain || !isset($aMtaDomain['DomainId']))
+						{
+							$iMtaDomainId = $this->CreateMtaDomain($oP7Account->Domain->Name);
+							if ($iMtaDomainId)
+							{
+								\Aurora\System\Api::Log("{$oP7Account->Domain->Name} MTA domain was created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							}
+							else
+							{
+								\Aurora\System\Api::Log("Error while MTA domain creation: {$oP7Account->Domain->Name} domain wasn't created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+								$this->Escape();
+							}
+						}
+						else
+						{
+							$iMtaDomainId = $aMtaDomain['DomainId'];
+						}
+						$aMtaAccount = $this->oP8MtaConnectorModule->oApiMainManager->getAccountByEmail($sP7UserEmail);
+						if (!$aMtaAccount)
+						{
+							$this->CreateMtaAccount($oP7Account, $iMtaDomainId, $iNewUserId);
+						}
 					}
 					$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iNewUserId);
 					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
 					{
 						\Aurora\System\Api::Log("Error. User not found: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 
 					$this->oMigrationLog->CurAccountId = 0;
@@ -293,12 +330,13 @@ class P7ToP8Migration
 					$this->oMigrationLog->NewSocialAccountId = 0;
 					$this->oMigrationLog->CurContactId = 0;
 					$this->oMigrationLog->CurGroupContactId = 0;
+					$this->oMigrationLog->CurFetcherId = 0;
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
 				if (!$this->UserP7ToP8($oP7Account, $oP8User))
 				{
 					\Aurora\System\Api::Log("Error while User settings creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 				\Aurora\System\Api::Log("  Settings migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				//DOMAIN
@@ -310,14 +348,14 @@ class P7ToP8Migration
 					if (!$iServerId)
 					{
 						\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 					\Aurora\System\Api::Log("  Server {$oP7Account->Domain->Name} migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 					if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
 					{
 						\Aurora\System\Api::Log("Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
@@ -340,16 +378,15 @@ class P7ToP8Migration
 					if (!$this->AccountP7ToP8($iP7AccountId, $oP8User, $oServer))
 					{
 						\Aurora\System\Api::Log("Error while User accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 					//SOCIAL ACCOUNTS
 					if (!$this->SocialAccountsP7ToP8($iP7AccountId, $oP8User))
 					{
 						\Aurora\System\Api::Log("Error while User social accounts creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 				}
-
 				//GROUP CONTACTS
 				$aGroupContactListItems = $this->oP7ApiContactsManagerFrom->getGroupItems($iP7UserId);
 				if (count($aGroupContactListItems) === 0)
@@ -378,7 +415,7 @@ class P7ToP8Migration
 					if (!$sP8GroupContactUUID)
 					{
 						\Aurora\System\Api::Log("Error while Group contact creation: " . $oGroup->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 					else
 					{
@@ -413,20 +450,27 @@ class P7ToP8Migration
 					if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
 					{
 						\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						$this->Redirect();
+						$this->Escape();
 					}
 					else
 					{
 						$iContactsCount++;
 					}
 				}
-
 				//FILES
 				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
 				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
 				{
 					$sDestinationPath = $this->sP8UserFiles . "/" . $oP8User->UUID;
-					$this->CopyDir($sTargetPath, $sDestinationPath);
+					if ($this->oP8MtaConnectorModule)
+					{
+						//rename user directories
+						\rename($sTargetPath, $this->sP7UserFiles . "/" . $oP8User->UUID);
+					}
+					else
+					{
+						$this->CopyDir($sTargetPath, $sDestinationPath);
+					}
 				}
 
 				//add user to migrated-users file
@@ -443,6 +487,12 @@ class P7ToP8Migration
 			fclose($rUserListHandle);
 			//SHARED CALENDARS
 			$this->MigrateSharedCalendars();
+			//MAILINGLISTS
+			if ($this->oP8MtaConnectorModule)
+			{
+				$this->MailinglistsP7ToP8();
+			}
+
 		}
 		\Aurora\System\Api::Log("Users were migrated.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$this->Output("Users were migrated");
@@ -518,7 +568,7 @@ class P7ToP8Migration
 			if (!$iServerId)
 			{
 				\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->IncomingMailServer, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				$this->Redirect();
+				$this->Escape();
 			}
 			else
 			{
@@ -562,7 +612,7 @@ class P7ToP8Migration
 			}
 
 			$oP8Account->IsDisabled = $oP7Account->IsDisabled;
-			$oP8Account->UseToAuthorize = !$oP7Account->IsInternal;
+			$oP8Account->UseToAuthorize = $oP7Account->IsDefaultAccount;
 			$oP8Account->Signature = $oP7Account->Signature;
 			$oP8Account->UseSignature = $oP7Account->SignatureOptions;
 			$oP8Account->UseThreading = $oServer->EnableThreading;
@@ -595,6 +645,16 @@ class P7ToP8Migration
 		if ($bResult)
 		{
 			$bResult = $this->IdentitiesP7ToP8($iP7AccountId, $oP8Account);
+		}
+		//FETCHERS
+		if ($this->oP8MtaConnectorModule && $oP7Account->IsDefaultAccount)
+		{
+			$this->FetchersP7ToP8($oP7Account, $oP8User->EntityId, $oP8Account->EntityId);
+		}
+		//ALIASES
+		if ($this->oP8MtaConnectorModule)
+		{
+			$this->AliasesP7ToP8($oP7Account, $oP8User->EntityId);
 		}
 		\Aurora\System\Api::Log("  End migrate account: " . $iP7AccountId . ' | ' . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		return $bResult;
@@ -632,14 +692,14 @@ class P7ToP8Migration
 				if (!$this->oP8OAuthIntegratorWebclientModule->oManager->createAccount($oP8SocialAccount))
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 
 				$oP8NewSocialAccount = $this->oP8OAuthIntegratorWebclientModule->oManager->getAccount($oP8User->EntityId, $oSocial->TypeStr);
 				if (!$oP8NewSocialAccount && !$oP8NewSocialAccount instanceof \Aurora\Modules\OAuthIntegratorWebclient\Classes\Account)
 				{
 					\Aurora\System\Api::Log("Error while Social Account creation: " . $oSocial->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 				else
 				{
@@ -1004,10 +1064,29 @@ class P7ToP8Migration
 				$this->Output("\n stop_before_sabredav");
 				die();
 			}
+			$sUnixSocket = '';
+			$sDbPort = '';
+			$iPos = strpos($oP8DBHost, ':');
+			if (false !== $iPos && 0 < $iPos)
+			{
+				$sAfter = substr($oP8DBHost, $iPos + 1);
+				$oP8DBHost = substr($oP8DBHost, 0, $iPos);
+				if (is_numeric($sAfter))
+				{
+					$sDbPort = $sAfter;
+				}
+				else
+				{
+					$sUnixSocket = $sAfter;
+				}
+			}
 			//Upgrade sabredav data from 1.8 to 3.0 version
 			$aOutput = null;
 			$iStatus = null;
-			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost}".
+				(empty($sDbPort) ? '' : ';port='.$sDbPort).
+				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
+				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade18To20, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1020,7 +1099,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost}".
+				(empty($sDbPort) ? '' : ';port='.$sDbPort).
+				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
+				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade20To21, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1033,7 +1115,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost}".
+				(empty($sDbPort) ? '' : ';port='.$sDbPort).
+				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
+				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade21To30, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1046,7 +1131,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost};dbname={$oP8DBName}\" \"\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost}".
+				(empty($sDbPort) ? '' : ';port='.$sDbPort).
+				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
+				";dbname={$oP8DBName}\" \"\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1250,7 +1338,8 @@ class P7ToP8Migration
 	public function CreateUserList()
 	{
 		$sGetUserLIstQuery = "SELECT DISTINCT `email` FROM `" . \CApi::GetSettings()->GetConf('Common/DBPrefix') . "awm_accounts`
-				WHERE `def_acct`=1
+				WHERE `def_acct` = 1
+				AND `mailing_list` != 1
 				ORDER BY `email`";
 		$stmt = \CApi::GetPDO()->prepare($sGetUserLIstQuery);
 		$stmt->execute();
@@ -1258,7 +1347,7 @@ class P7ToP8Migration
 		file_put_contents($this->sUserListFile, implode("\r\n", $aUsers));
 	}
 
-	public function Redirect()
+	public function Escape()
 	{
 		echo 'Exit with error. For more detail see log-file.';
 		exit;
@@ -1294,16 +1383,31 @@ class P7ToP8Migration
 				if (!$iServerId)
 				{
 					\Aurora\System\Api::Log("Error while Server creation: " . $sDomainName, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 				$oServer = $this->oP8MailModuleDecorator->GetServer($iServerId);
 				if (!$oServer instanceof \Aurora\Modules\Mail\Classes\Server)
 				{
 					\Aurora\System\Api::Log("Error. Server not found. Server Id: " . $iServerId, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-					$this->Redirect();
+					$this->Escape();
 				}
 				$this->oMigrationLog->DomainsMigrated = 1;
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+			}
+			//add domain to MTA domains list
+			if ($this->oP8MtaConnectorModule && $sDomainName !== 'Default')
+			{
+				$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($sDomainName);
+				if (!$aMtaDomain || !isset($aMtaDomain['DomainId']))
+				{
+					$iMtaDomainId = $this->CreateMtaDomain($sDomainName);
+					if (!$iMtaDomainId)
+					{
+						\Aurora\System\Api::Log("Error while MTA domain creation: {$sDomainName} domain wasn't created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Escape();
+					}
+					\Aurora\System\Api::Log("{$sDomainName} MTA domain was created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				}
 			}
 		}
 		$this->Output("Empty domains migrated");
@@ -1449,6 +1553,250 @@ class P7ToP8Migration
 		$this->Output("Shared calendars migrated");
 		\Aurora\System\Api::Log("Shared calendars migrated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 	}
+
+	public function CreateMtaDomain($sDomainName)
+	{
+		if (!empty($sDomainName))
+		{
+			$this->oP8MtaConnectorModule->CreateDomain($this->GetTenant(), $sDomainName);
+			$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($sDomainName);
+			if ($aMtaDomain && isset($aMtaDomain['DomainId']))
+			{
+				return $aMtaDomain['DomainId'];
+			}
+			else
+			{
+				\Aurora\System\Api::Log("Error while MTA domain creation: {$sDomainName} domain wasn't created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Escape();
+			}
+		}
+		else
+		{
+			\Aurora\System\Api::Log("Error while MTA domain creation: domain name is empty ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Escape();
+		}
+	}
+
+	public function CreateMtaAccount(\CAccount $oP7Account, $iMtaDomainId, $iP8UserId)
+	{
+		$mResult = $this->oP8MtaConnectorModule->oApiMainManager->createAccount(
+			$oP7Account->IncomingMailLogin,
+			$oP7Account->IncomingMailPassword,
+			$iP8UserId,
+			$iMtaDomainId
+		);
+
+		if ($mResult)
+		{
+			$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iP8UserId);
+			if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
+			{
+				\Aurora\System\Api::Log("Error. User with ID {$iP8UserId} not found in P8 database: " . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Escape();
+			}
+			$oP8User->{'MtaConnector::TotalQuotaBytes'} = $oP7Account->StorageQuota * self::QUOTA_KILO_MULTIPLIER;
+			if (!$this->oP8CoreDecorator->UpdateUserObject($oP8User))
+			{
+				\Aurora\System\Api::Log("Error while User quota updating: " . $oP7Account->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Escape();
+			}
+		}
+		else
+		{
+			\Aurora\System\Api::Log("Error while MTA account creation: {$oP7Account->IncomingMailLogin}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Escape();
+		}
+	}
+
+	public function FetchersP7ToP8(\CAccount $oP7Account, $oP8UserId, $oP8AccountId)
+	{
+		$oApiFetchers = \CApi::Manager('fetchers');
+		$aFetchers = $oApiFetchers->getFetchers($oP7Account);
+		if (is_array($aFetchers) && 0 < count($aFetchers))
+		{
+			\Aurora\System\Api::Log("  Start Fetchers migration: " . $oP7Account->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			//sort fetchers by IdFetcher
+			usort($aFetchers, function($a, $b) {
+				if ($a->IdFetcher == $b->IdFetcher)
+				{
+					return 0;
+				}
+				return ($a->IdFetcher < $b->IdFetcher) ? -1 : 1;
+			});
+			foreach ($aFetchers as /* @var $oFetcherItem \CFetcher */ $oFetcherItem)
+			{
+				if (!$this->bFindFetcher && $this->oMigrationLog->CurFetcherId !== 0 && $oFetcherItem->IdFetcher <= $this->oMigrationLog->CurFetcherId)
+				{
+					//skip Fetcher if already done
+					\Aurora\System\Api::Log("  Skip fetcher: " . $oFetcherItem->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					continue;
+				}
+				$this->bFindFetcher = true;
+				//create Fetcher
+				$mFetcherResult = $this->oP8MtaConnectorModule::Decorator()->CreateFetcher(
+					$oP8UserId,
+					$oP8AccountId,
+					$oFetcherItem->Folder,
+					$oFetcherItem->IncomingMailLogin,
+					$oFetcherItem->IncomingMailPassword,
+					$oFetcherItem->IncomingMailServer,
+					$oFetcherItem->IncomingMailPort,
+					$oFetcherItem->IncomingMailSecurity,
+					$oFetcherItem->LeaveMessagesOnServer
+				);
+				if (!$mFetcherResult)
+				{
+					\Aurora\System\Api::Log("Error while Fetcher creation: " . $oFetcherItem->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Escape();
+				}
+				$this->oMigrationLog->CurFetcherId = $oFetcherItem->IdFetcher;
+				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+			}
+			\Aurora\System\Api::Log("  Fetchers migrated successfully.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		}
+	}
+
+	public function AliasesP7ToP8(\CAccount $oP7Account, $oP8UserId)
+	{
+		$oMailsuiteManager = \CApi::Manager('mailsuite');
+		$oMailAliases = new CMailAliases($oP7Account);
+		$oMailsuiteManager->initMailAliases($oMailAliases);
+		if (isset($oMailAliases->Aliases) && !empty($oMailAliases->Aliases))
+		{
+			\Aurora\System\Api::Log("  Start Aliases migration: " . $oP7Account->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			foreach ($oMailAliases->Aliases as $sP7Alias)
+			{
+				//trying to find Alias in p8 database
+				$aP8Aliases = $this->oP8MtaConnectorModule::Decorator()->GetAliases($oP8UserId);
+				if ($aP8Aliases && isset($aP8Aliases['Aliases']) && !empty($aP8Aliases['Aliases']))
+				{
+					foreach ($aP8Aliases['Aliases'] as $sP8Alias)
+					{
+						if ($sP8Alias === $sP7Alias)
+						{
+							\Aurora\System\Api::Log("  Alias {$sP7Alias} for user {$oMailAliases->Email} already exists.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							continue 2;
+						}
+					}
+				}
+				//create Alias if it doesn't exist
+				$aAliasParts = explode("@", $sP7Alias);
+				if (is_array($aAliasParts) && count($aAliasParts) === 2)
+				{
+					$AliasName = $aAliasParts[0];
+					$AliasDomain = $aAliasParts[1];
+					$mResult = $this->oP8MtaConnectorModule::Decorator()->AddNewAlias($oP8UserId, $AliasName, $AliasDomain);
+					if (!$mResult)
+					{
+						\Aurora\System\Api::Log("Error while Alias creation: " . $sP7Alias, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$this->Escape();
+					}
+				}
+				else
+				{
+					\Aurora\System\Api::Log("Wrong Alias name {$sP7Alias}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Escape();
+				}
+			}
+			\Aurora\System\Api::Log("  Aliases migrated successfully.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		}
+	}
+
+	public function MailinglistsP7ToP8()
+	{
+		$oMailsuiteManager = \CApi::Manager('mailsuite');
+		\Aurora\System\Api::Log("Start mailing lists migration", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+
+		$sMailingListsQuery = "SELECT id_acct FROM `awm_accounts` WHERE mailing_list = 1";
+		$stmt = $this->oP7PDO->prepare($sMailingListsQuery);
+		$stmt->execute();
+		$aMailingListIds = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+		foreach ($aMailingListIds as $sMailingListId)
+		{
+			$oP7MailingList = $oMailsuiteManager->getMailingListById((int) $sMailingListId);
+			if ($oP7MailingList && $oP7MailingList instanceof \CMailingList)
+			{
+				$sDomainName = '';
+				$aEmailParts = explode("@", $oP7MailingList->Email);
+				if (is_array($aEmailParts) && count($aEmailParts) === 2)
+				{
+					$sDomainName = $aEmailParts[1];
+				}
+				$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($sDomainName);
+				if ($aMtaDomain && isset($aMtaDomain['DomainId']))
+				{
+					//check if mailing list already exists
+					$mP8MailingListId = $this->oP8MtaConnectorModule->oApiMailingListsManager->getMailingListIdByEmail($oP7MailingList->Email);
+					if ($mP8MailingListId !== false)
+					{
+						\Aurora\System\Api::Log("MailingList {$oP7MailingList->Email} already exists.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					}
+					else
+					{
+						//create mailing list if not exists
+						$bCreateMailingListResult = $this->oP8MtaConnectorModule::Decorator()->CreateMailingList($this->GetTenant(), (int) $aMtaDomain['DomainId'], $oP7MailingList->Email);
+						if ($bCreateMailingListResult)
+						{
+							$mP8MailingListId = $this->oP8MtaConnectorModule->oApiMailingListsManager->getMailingListIdByEmail($oP7MailingList->Email);
+						}
+						else
+						{
+							\Aurora\System\Api::Log("Error while mailing list creation: " . $oP7MailingList->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							$this->Escape();
+						}
+					}
+					//migrate MailingList members
+					if ($mP8MailingListId && is_array($oP7MailingList->Members) && !empty($oP7MailingList->Members))
+					{
+						foreach ($oP7MailingList->Members as $sP7Member)
+						{
+							//check if member already in mailing list
+							$aP8MailingListMemebers = $this->oP8MtaConnectorModule->oApiMailingListsManager->GetMailingListMembers($mP8MailingListId);
+							if ($aP8MailingListMemebers && is_array($aP8MailingListMemebers) && !empty($aP8MailingListMemebers))
+							{
+								foreach ($aP8MailingListMemebers as $sP8Member)
+								{
+									if ($sP7Member === $sP8Member)
+									{
+										\Aurora\System\Api::Log("Member {$sP7Member} already in {$oP7MailingList->Email} mailing list.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+										continue 2;
+									}
+								}
+							}
+							//add member to mailing list
+							$bAddMailingListMemberResult = $this->oP8MtaConnectorModule::Decorator()->AddMailingListMember($mP8MailingListId, $sP7Member);
+							if (!$bAddMailingListMemberResult)
+							{
+								\Aurora\System\Api::Log("Error while adding {$sP7Member} memeber to {$oP7MailingList->Email} mailing list. ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+								$this->Escape();
+							}
+						}
+					}
+				}
+				else
+				{
+					\Aurora\System\Api::Log("Domain {$oP7MailingList->oDomain->Name} wasn't found.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					$this->Escape();
+				}
+			}
+		}
+		\Aurora\System\Api::Log("Mailing lists migrated successfully.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+	}
+
+	public function GetTenant()
+	{
+		if (!$this->iP8TenantId)
+		{
+			//Get first tenant from tenant list if exists
+			$aTenantList = \Aurora\System\Api::GetModuleDecorator('Core')->GetTenantList();
+			if (!empty($aTenantList) && isset($aTenantList[0]) && $aTenantList[0] instanceof \Aurora\Modules\Core\Classes\Tenant)
+			{
+				$this->iP8TenantId = $aTenantList[0]->EntityId;
+			}
+		}
+
+		return $this->iP8TenantId;
+	}
 }
 
 $oMigration = new P7ToP8Migration();
@@ -1474,8 +1822,12 @@ else
 	}
 	catch (Exception $e)
 	{
-		\Aurora\System\Api::Log("Exception: " . $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
-		$oMigration->Redirect();
+		\Aurora\System\Api::Log("Exception: " . $e->getMessage() .
+			"\nCode: " . $e->getCode() .
+			"\nFile: " . $e->getFile() .
+			"\nLine: " . $e->getLine() .
+			"\n" . $e->getTraceAsString(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		$oMigration->Escape();
 	}
 }
 exit("Done");
