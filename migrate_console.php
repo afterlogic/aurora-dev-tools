@@ -1600,6 +1600,12 @@ class P7ToP8Migration
 				\Aurora\System\Api::Log("Error while User quota updating: " . $oP7Account->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				$this->Escape();
 			}
+			$mUpdateUserMailQuotaResult = $this->oP8MtaConnectorModule->oApiMainManager->updateUserMailQuota($oP8User->EntityId, $oP7Account->StorageQuota);
+			if (!$mUpdateUserMailQuotaResult)
+			{
+				\Aurora\System\Api::Log("Error while update mta account quota: {$oP7Account->IncomingMailLogin}", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				$this->Escape();
+			}
 		}
 		else
 		{
