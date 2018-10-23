@@ -9,7 +9,7 @@
  * 4 - run the script to start migration process
  * 5 - The migration process is described in detail at:
  * https://afterlogic.com/docs/webmail-pro-8/installation/migration-from-v7-console-tool
- * 
+ *
  * php migrate_console.php --stop_before_sabredav
  * php migrate_console.php --skip_sabredav
  */
@@ -289,32 +289,6 @@ class P7ToP8Migration
 						\Aurora\System\Api::Log("Error while User creation: " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						$this->Escape();
 					}
-					if ($this->oP8MtaConnectorModule)
-					{
-						$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($oP7Account->Domain->Name);
-						if (!$aMtaDomain || !isset($aMtaDomain['DomainId']))
-						{
-							$iMtaDomainId = $this->CreateMtaDomain($oP7Account->Domain->Name);
-							if ($iMtaDomainId)
-							{
-								\Aurora\System\Api::Log("{$oP7Account->Domain->Name} MTA domain was created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-							}
-							else
-							{
-								\Aurora\System\Api::Log("Error while MTA domain creation: {$oP7Account->Domain->Name} domain wasn't created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
-								$this->Escape();
-							}
-						}
-						else
-						{
-							$iMtaDomainId = $aMtaDomain['DomainId'];
-						}
-						$aMtaAccount = $this->oP8MtaConnectorModule->oApiMainManager->getAccountByEmail($sP7UserEmail);
-						if (!$aMtaAccount)
-						{
-							$this->CreateMtaAccount($oP7Account, $iMtaDomainId, $iNewUserId);
-						}
-					}
 					$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iNewUserId);
 					if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
 					{
@@ -332,6 +306,32 @@ class P7ToP8Migration
 					$this->oMigrationLog->CurGroupContactId = 0;
 					$this->oMigrationLog->CurFetcherId = 0;
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+				}
+				if ($this->oP8MtaConnectorModule)
+				{
+					$aMtaDomain = $this->oP8MtaConnectorModule->oApiDomainsManager->getDomainByName($oP7Account->Domain->Name);
+					if (!$aMtaDomain || !isset($aMtaDomain['DomainId']))
+					{
+						$iMtaDomainId = $this->CreateMtaDomain($oP7Account->Domain->Name);
+						if ($iMtaDomainId)
+						{
+							\Aurora\System\Api::Log("{$oP7Account->Domain->Name} MTA domain was created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						}
+						else
+						{
+							\Aurora\System\Api::Log("Error while MTA domain creation: {$oP7Account->Domain->Name} domain wasn't created", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							$this->Escape();
+						}
+					}
+					else
+					{
+						$iMtaDomainId = $aMtaDomain['DomainId'];
+					}
+					$aMtaAccount = $this->oP8MtaConnectorModule->oApiMainManager->getAccountByEmail($sP7UserEmail);
+					if (!$aMtaAccount)
+					{
+						$this->CreateMtaAccount($oP7Account, $iMtaDomainId, $oP8User);
+					}
 				}
 				if (!$this->UserP7ToP8($oP7Account, $oP8User))
 				{
@@ -501,7 +501,7 @@ class P7ToP8Migration
 	}
 
 	public function UserP7ToP8(\CAccount $oP7Account, \Aurora\Modules\Core\Classes\User $oP8User)
-	{	
+	{
 		$oP7UserCalendarSettings = $this->oP7ApiUsersManager->getCalUser($oP7Account->IdUser);
 		$oP8User->IsDisabled = $oP7Account ? $oP7Account->IsDisabled : false;
 
@@ -1577,23 +1577,17 @@ class P7ToP8Migration
 		}
 	}
 
-	public function CreateMtaAccount(\CAccount $oP7Account, $iMtaDomainId, $iP8UserId)
+	public function CreateMtaAccount(\CAccount $oP7Account, $iMtaDomainId, $oP8User)
 	{
 		$mResult = $this->oP8MtaConnectorModule->oApiMainManager->createAccount(
 			$oP7Account->IncomingMailLogin,
 			$oP7Account->IncomingMailPassword,
-			$iP8UserId,
+			$oP8User->EntityId,
 			$iMtaDomainId
 		);
 
 		if ($mResult)
 		{
-			$oP8User = $this->oP8CoreDecorator->GetUserByUUID($iP8UserId);
-			if (!$oP8User instanceof \Aurora\Modules\Core\Classes\User)
-			{
-				\Aurora\System\Api::Log("Error. User with ID {$iP8UserId} not found in P8 database: " . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-				$this->Escape();
-			}
 			$oP8User->{'MtaConnector::TotalQuotaBytes'} = $oP7Account->StorageQuota * self::QUOTA_KILO_MULTIPLIER;
 			if (!$this->oP8CoreDecorator->UpdateUserObject($oP8User))
 			{
@@ -1634,7 +1628,7 @@ class P7ToP8Migration
 				if (!$this->bFindFetcher && $this->oMigrationLog->CurFetcherId !== 0 && $oFetcherItem->IdFetcher <= $this->oMigrationLog->CurFetcherId)
 				{
 					//skip Fetcher if already done
-					\Aurora\System\Api::Log("  Skip fetcher: " . $oFetcherItem->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+					\Aurora\System\Api::Log("  Skip fetcher: " . $oFetcherItem->IncomingMailLogin, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					continue;
 				}
 				$this->bFindFetcher = true;
