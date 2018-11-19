@@ -919,7 +919,7 @@ class P7ToP8Migration
 		$aSieveDomains = array_map('strtolower', $aSieveDomains);
 		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
 
-		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModuleDecorator->GetName());
+		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModuleDecorator::GetName());
 		$oServer->OwnerType = $oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin;
 		$oServer->TenantId = 0;
 		$oServer->Name = $oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name;
