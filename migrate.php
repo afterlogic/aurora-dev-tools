@@ -526,7 +526,7 @@ class P7ToP8Migration
 
 		if ($this->oMigrationLog->CurAccountId === $iP7AccountId)
 		{
-			$oP8Account = $this->oP8MailModule->oApiAccountsManager->getAccountById($this->oMigrationLog->NewAccountId);
+			$oP8Account = $this->oP8MailModule->getAccountsManager()->getAccountById($this->oMigrationLog->NewAccountId);
 			\Aurora\System\Api::Log("  Account already exists." . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		}
 		else
@@ -564,7 +564,7 @@ class P7ToP8Migration
 			$oP8Account->FoldersOrder = $sFolderOrders;
 			$oP8Account->SaveRepliesToCurrFolder = $oP7Account->User->SaveRepliedMessagesToCurrentFolder;
 
-			$bResult = $this->oP8MailModule->oApiAccountsManager->updateAccount($oP8Account);
+			$bResult = $this->oP8MailModule->getAccountsManager()->updateAccount($oP8Account);
 			//System folders mapping
 			$aSystemFoldersNames = $this->oP7ApiMail->getSystemFolderNames($oP7Account);
 			if (is_array($aSystemFoldersNames) && count($aSystemFoldersNames) > 0)
@@ -854,7 +854,7 @@ class P7ToP8Migration
 		$aSieveDomains = array_map('strtolower', $aSieveDomains);
 		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
 
-		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModuleDecorator::GetName());
+		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModule::GetName());
 		$oServer->OwnerType = $oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin;
 		$oServer->TenantId = 0;
 		$oServer->Name = $oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name;
@@ -873,7 +873,7 @@ class P7ToP8Migration
 		$oServer->SievePort = $iSievePort;
 		$oServer->UseFullEmailAddressAsLogin = false;
 
-		$iServerId = $this->oP8MailModule->oApiServersManager->createServer($oServer);
+		$iServerId = $this->oP8MailModule->getServersManager()->createServer($oServer);
 		return $iServerId ? $iServerId : false;
 	}
 
@@ -1415,7 +1415,7 @@ class P7ToP8Migration
 						$oOwner->EntityId,
 						$sCalendarUri,
 						/*IsPublic*/0,
-						/*Shares*/	json_encode([]),
+						/*Shares*/json_encode([]),
 						/*ShareToAll*/true,
 						/*ShareToAllAccess*/$aSharedCalendar['readonly'] ? \Aurora\Modules\Calendar\Enums\Permission::Read : \Aurora\Modules\Calendar\Enums\Permission::Write
 					);
@@ -1474,7 +1474,11 @@ else
 	}
 	catch (Exception $e)
 	{
-		\Aurora\System\Api::Log("Exception: " . $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+		\Aurora\System\Api::Log("Exception: " . $e->getMessage() .
+			"\nCode: " . $e->getCode() .
+			"\nFile: " . $e->getFile() .
+			"\nLine: " . $e->getLine() .
+			"\n" . $e->getTraceAsString(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 		$oMigration->Redirect();
 	}
 }
