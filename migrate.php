@@ -871,7 +871,7 @@ class P7ToP8Migration
 		$oServer->EnableThreading = $oDomain->UseThreads;
 		$oServer->EnableSieve = $bSieveEnabled;
 		$oServer->SievePort = $iSievePort;
-		$oServer->UseFullEmailAddressAsLogin = false;
+		$oServer->UseFullEmailAddressAsLogin = !$this->oP7Settings->GetConf('WebMail/UseLoginWithoutDomain');
 
 		$iServerId = $this->oP8MailModule->getServersManager()->createServer($oServer);
 		return $iServerId ? $iServerId : false;
