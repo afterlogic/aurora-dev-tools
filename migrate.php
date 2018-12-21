@@ -950,8 +950,8 @@ class P7ToP8Migration
 				\Aurora\System\Api::Log("Error during upgrade DB process. " .  $e->getMessage(), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
-			\Aurora\System\Api::Log("Delete tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-			$this->Output("<pre>Delete tables before moving");
+			\Aurora\System\Api::Log("Deleting tables from P8 DB: " . $sDelTableQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			$this->Output("<pre>Deleting tables before moving");
 
 			try
 			{
