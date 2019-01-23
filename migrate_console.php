@@ -919,7 +919,7 @@ class P7ToP8Migration
 		$aSieveDomains = array_map('strtolower', $aSieveDomains);
 		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
 
-		$oServer = new \Aurora\Modules\Mail\Classes\Server($this->oP8MailModule::GetName());
+		$oServer = new \Aurora\Modules\Mail\Classes\Server(\Aurora\Modules\Mail\Module::GetName());
 		$oServer->OwnerType = $oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin;
 		$oServer->TenantId = 0;
 		$oServer->Name = $oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name;
@@ -1033,8 +1033,8 @@ class P7ToP8Migration
 			}
 
 			//Move tables from P7 DB to P8  DB
-			$this->MoveTables();
 			$this->Output("Move tables from p7 DB to p8  DB\n-----------------------------------------------");
+			$this->MoveTables();
 
 			//Rename tables before upgrading
 			$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
@@ -1090,7 +1090,7 @@ class P7ToP8Migration
 			exec($sUpgrade18To20, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
-				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.0 database to 2.0. Output:\n" . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
 			\Aurora\System\Api::Log("Migrate from a pre-2.0 database to 2.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1106,7 +1106,7 @@ class P7ToP8Migration
 			exec($sUpgrade20To21, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
-				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-2.1 database to 2.1. Output:\n" . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
 			\Aurora\System\Api::Log("Migrate from a pre-2.1 database to 2.1." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1122,7 +1122,7 @@ class P7ToP8Migration
 			exec($sUpgrade21To30, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
-				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.0 database to 3.0. Output:\n" . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
 			\Aurora\System\Api::Log("Migrate from a pre-3.0 database to 3.0." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1138,7 +1138,7 @@ class P7ToP8Migration
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
-				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.2 database to 3.2.", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("Error during upgrade DB process. Failed migration from a pre-3.2 database to 3.2. Output:\n" . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				return false;
 			}
 			\Aurora\System\Api::Log("Migrate from a pre-3.2 database to 3.2." . implode("\n", $aOutput), \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1148,6 +1148,27 @@ class P7ToP8Migration
 
 		try
 		{
+			$sDbPort = '';
+			$sUnixSocket = '';
+			$iPos = strpos($oP8DBHost, ':');
+			if (false !== $iPos && 0 < $iPos)
+			{
+				$sAfter = substr($oP8DBHost, $iPos + 1);
+				$sP8DBHost = substr($oP8DBHost, 0, $iPos);
+
+				if (is_numeric($sAfter))
+				{
+					$sDbPort = $sAfter;
+				}
+				else
+				{
+					$sUnixSocket = $sAfter;
+				}
+			}
+			$this->oP8PDO = @new \PDO('mysql:dbname=' . $oP8DBName .
+						(empty($sP8DBHost) ? '' : ';host='.$sP8DBHost).
+						(empty($sDbPort) ? '' : ';port='.$sDbPort).
+						(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket), $oP8DBLogin, $oP8DBPassword);
 			//Add prefixes
 			$sPrefix = $oP8DBPrefix . "adav_";
 			$sAddPrefixQuery = "RENAME TABLE addressbooks TO {$sPrefix}addressbooks,
@@ -1417,6 +1438,7 @@ class P7ToP8Migration
 	public function MoveTables()
 	{
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$iRowLimit = 1000;
 
 		$aTables = [
 			"adav_addressbooks",
@@ -1433,47 +1455,57 @@ class P7ToP8Migration
 		foreach ($aTables as $sTableName)
 		{
 			$sGetTableQuery = "SHOW CREATE TABLE `{$oP7DBPrefix}{$sTableName}`";
-			$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}`";
 			try
 			{
 				$stmt = $this->oP7PDO->prepare($sGetTableQuery);
 				$stmt->execute();
 				$aGetTable = $stmt->fetchAll();
 				$this->oP8PDO->exec($aGetTable[0]['Create Table']);
-
-				$stmt = $this->oP7PDO->prepare($sSelectAllQuery);
+				$sSelectRowCount = "SELECT count(*) FROM `{$oP7DBPrefix}{$sTableName}`";
+				$stmt = $this->oP7PDO->prepare($sSelectRowCount);
 				$stmt->execute();
-				$aGetTableData = $stmt->fetchAll(PDO::FETCH_ASSOC);
-				$sInsertDataQuery = '';
+				$iRowCount = (int) $stmt->fetchColumn();
+				$iOffset = 0;
+				\Aurora\System\Api::Log("    Table: {$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				while($iOffset < $iRowCount)
+				{
+					$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}` LIMIT {$iRowLimit} OFFSET {$iOffset}";
+					$stmt = $this->oP7PDO->prepare($sSelectAllQuery);
+					$stmt->execute();
+					$aGetTableData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+					$iOffset += $iRowLimit;
+					$sInsertDataQuery = '';
 
-				foreach ($aGetTableData as $aRow)
-				{
-					$sInsertDataRow = "";
-					foreach ($aRow as $field)
+					foreach ($aGetTableData as $aRow)
 					{
-						if (is_null($field))
+						$sInsertDataRow = "";
+						foreach ($aRow as $field)
 						{
-							$field = "NULL";
+							if (is_null($field))
+							{
+								$field = "NULL";
+							}
+							else
+							{
+								$field = "'" . addslashes($field) . "'";
+							}
+							if ($sInsertDataRow == "")
+							{
+								$sInsertDataRow = $field;
+							}
+							else
+							{
+								$sInsertDataRow = $sInsertDataRow . ', ' . $field;
+							}
 						}
-						else
-						{
-							$field = "'" . addslashes($field) . "'";
-						}
-						if ($sInsertDataRow == "")
-						{
-							$sInsertDataRow = $field;
-						}
-						else
-						{
-							$sInsertDataRow = $sInsertDataRow . ', ' . $field;
-						}
+						$sInsertDataQuery .= "INSERT INTO `{$oP7DBPrefix}{$sTableName}` VALUES ({$sInsertDataRow});\n";
 					}
-					$sInsertDataQuery .= "INSERT INTO `{$oP7DBPrefix}{$sTableName}` VALUES ({$sInsertDataRow});\n";
+					if ($sInsertDataQuery !== '')
+					{
+						$this->oP8PDO->exec($sInsertDataQuery);
+					}
 				}
-				if ($sInsertDataQuery !== '')
-				{
-					$this->oP8PDO->exec($sInsertDataQuery);
-				}
+				\Aurora\System\Api::Log("    Table: {$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 			catch(Exception $e)
 			{
