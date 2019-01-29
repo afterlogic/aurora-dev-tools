@@ -600,6 +600,10 @@ class P7ToP8Migration
 			{
 				\Aurora\System\Api::Log("  Account created successfully. Account: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
+			else
+			{
+				\Aurora\System\Api::Log("  Error. Account not created: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			}
 		}
 
 		if ($oP8Account)
