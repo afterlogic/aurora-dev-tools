@@ -552,6 +552,22 @@ class P7ToP8Migration
 		{
 			return false;
 		}
+		$aResults = $this->oP8MailModule->getAccountsManager()->oEavManager->getEntities(
+			'Aurora\Modules\Mail\Classes\Account',
+			[],
+			0,
+			0,
+			[
+				'Email' => $oP7Account->Email,
+				'IdUser' => $oP8User->EntityId
+			]
+		);
+
+		if (is_array($aResults) && isset($aResults[0]))
+		{
+			\Aurora\System\Api::Log("  Skip duplicate account " . $iP7AccountId . ' | ' . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			return true;
+		}
 
 		if (!$oServer || $oP7Account->Domain->IdDomain === 0)
 		{
@@ -602,7 +618,7 @@ class P7ToP8Migration
 			}
 			else
 			{
-				\Aurora\System\Api::Log("  Error. Account not created: " . $oP8Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("  Error. Account not created: " . $oP7Account->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 		}
 
