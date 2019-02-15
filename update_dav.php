@@ -56,7 +56,7 @@ class Update
 
 	public function UpgradeDAVData(\Aurora\Modules\Core\Classes\User $oUser, $CalendarName)
 	{
-		$oDBPrefix = $this->oSettings->GetConf('DBPrefix');
+		$oDBPrefix = $this->oSettings->DBPrefix;
 		try
 		{
 			$sCalendarCheckPrincipal = "SELECT count(*)
@@ -96,7 +96,7 @@ class Update
 		{
 			echo "\nStart UpgradePrincipals in {$tablename} table\n";
 			\Aurora\System\Api::Log("Start UpgradePrincipals  in {$tablename} table", \Aurora\System\Enums\LogLevel::Full, 'update-');
-			$oDBPrefix = $this->oSettings->GetConf('DBPrefix');
+			$oDBPrefix = $this->oSettings->DBPrefix;
 			try
 			{
 				$sGetUsersPrincipalsQuery = "SELECT principaluri FROM `{$oDBPrefix}adav_{$tablename}`";
@@ -152,8 +152,8 @@ class Update
 	{
 		\Aurora\System\Api::Log("Update DAV: Migrate20 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
-		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
-		$dbname = $this->oSettings->GetConf('DBName');
+		$prefix = $this->oSettings->DBPrefix . "adav_";
+		$dbname = $this->oSettings->DBName;
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
@@ -525,8 +525,8 @@ class Update
 	{
 		\Aurora\System\Api::Log("Update DAV: Migrate21 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
-		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
-		$dbname = $this->oSettings->GetConf('DBName');
+		$prefix = $this->oSettings->DBPrefix . "adav_";
+		$dbname = $this->oSettings->DBName;
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
@@ -660,7 +660,7 @@ class Update
 	{
 		\Aurora\System\Api::Log("Update DAV: Migrate30 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$pdo = $this->oPDO;
-		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
+		$prefix = $this->oSettings->DBPrefix . "adav_";
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
@@ -775,7 +775,7 @@ class Update
 		\Aurora\System\Api::Log("Update DAV: Migrate32 ", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		$backupPostfix = time();
 		$pdo = $this->oPDO;
-		$prefix = $this->oSettings->GetConf('DBPrefix') . "adav_";
+		$prefix = $this->oSettings->DBPrefix . "adav_";
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
@@ -976,8 +976,8 @@ class Update
 		\Aurora\System\Api::Log("Update DAV: Public calendars migration started", \Aurora\System\Enums\LogLevel::Full, 'update-');
 		echo "Public calendars migration started.\n";
 		\Aurora\System\Api::Log("Public calendars migration.", \Aurora\System\Enums\LogLevel::Full, 'update-');
-		$prefix = $this->oSettings->GetConf('DBPrefix');
-		$dbname = $this->oSettings->GetConf('DBName');
+		$prefix = $this->oSettings->DBPrefix;
+		$dbname = $this->oSettings->DBName;
 		$oCalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
 		//check if 'calendarshares' table xists
 		$sCheckCalendarsharesQuery = "

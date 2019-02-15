@@ -966,11 +966,11 @@ class P7ToP8Migration
 	{
 		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 
-		$oP8DBLogin = $this->oP8Settings->GetConf('DBLogin');
-		$oP8DBPassword = $this->oP8Settings->GetConf('DBPassword');
-		$oP8DBName = $this->oP8Settings->GetConf('DBName');
-		$oP8DBPrefix = $this->oP8Settings->GetConf('DBPrefix');
-		$oP8DBHost = $this->oP8Settings->GetConf('DBHost');
+		$oP8DBLogin = $this->oP8Settings->DBLogin;
+		$oP8DBPassword = $this->oP8Settings->DBPassword;
+		$oP8DBName = $this->oP8Settings->DBName;
+		$oP8DBPrefix = $this->oP8Settings->DBPrefix;
+		$oP8DBHost = $this->oP8Settings->DBHost;
 
 		//Check if DB exists
 		$sCheckTablesQuery = "SELECT count(*) FROM INFORMATION_SCHEMA.TABLES
