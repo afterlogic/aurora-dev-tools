@@ -1381,7 +1381,7 @@ class P7ToP8Migration
 				$stmt->execute();
 				$iRowCount = (int) $stmt->fetchColumn();
 				$iOffset = 0;
-				\Aurora\System\Api::Log("    Table: {$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				while($iOffset < $iRowCount)
 				{
 					$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}` LIMIT {$iRowLimit} OFFSET {$iOffset}";
@@ -1412,7 +1412,7 @@ class P7ToP8Migration
 						$this->oP8PDO->exec($sInsertDataQuery);
 					}
 				}
-				\Aurora\System\Api::Log("    Table: {$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 			catch(Exception $e)
 			{

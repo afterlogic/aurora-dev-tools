@@ -1248,7 +1248,7 @@ class P7ToP8Migration
 		if ($this->oMigrationLog->FilesMigrated)
 		{
 			$this->Output("Files information already updated");
-			\Aurora\System\Api::Log("Files already moved", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+			\Aurora\System\Api::Log("Files information already updated", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			return true;
 		}
 		$oDirectory = dir($this->sP8UserFiles);
@@ -1275,6 +1275,7 @@ class P7ToP8Migration
 				$sPathDir = $this->sP8UserFiles.'/'.$sRead;
 				if (is_dir($sPathDir))
 				{
+					\Aurora\System\Api::Log($sPathDir, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->UpdateDir($sPathDir);
 				}
 			}
@@ -1352,6 +1353,7 @@ class P7ToP8Migration
 				$sPathDir = $sDir . '/' . $sRead;
 				if (is_dir($sPathDir))
 				{
+					\Aurora\System\Api::Log("   " . $sPathDir, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$this->UpdateDir($sPathDir);
 				}
 			}
@@ -1486,7 +1488,7 @@ class P7ToP8Migration
 				$stmt->execute();
 				$iRowCount = (int) $stmt->fetchColumn();
 				$iOffset = 0;
-				\Aurora\System\Api::Log("    Table: {$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				while($iOffset < $iRowCount)
 				{
 					$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}` LIMIT {$iRowLimit} OFFSET {$iOffset}";
@@ -1525,7 +1527,7 @@ class P7ToP8Migration
 						$this->oP8PDO->exec($sInsertDataQuery);
 					}
 				}
-				\Aurora\System\Api::Log("    Table: {$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 			catch(Exception $e)
 			{
