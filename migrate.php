@@ -729,7 +729,7 @@ class P7ToP8Migration
 
 					if (isset($oP7Identity->UseSignature) && isset($oP7Identity->Signature))
 					{
-						$bResult = !!$this->oP8MailModule->oApiIdentitiesManager->updateIdentitySignature($iP8EntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
+						$bResult = !!$this->oP8MailModule->getIdentitiesManager()->updateIdentitySignature($iP8EntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
 						if (!$bResult)
 						{
 							\Aurora\System\Api::Log("Error while Signature creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');

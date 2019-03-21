@@ -447,7 +447,7 @@ class P7ToP8Migration
 						continue;
 					}
 					$this->bFindContact = true;
-					if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User))
+					if (!$this->ContactP7ToP8($oListItem->IdUser, $oListItem->Id, $oP8User->EntityId))
 					{
 						\Aurora\System\Api::Log("Error while Contact creation: " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 						$this->Escape();
@@ -794,7 +794,7 @@ class P7ToP8Migration
 
 					if (isset($oP7Identity->UseSignature) && isset($oP7Identity->Signature))
 					{
-						$bResult = !!$this->oP8MailModule->oApiIdentitiesManager->updateIdentitySignature($iP8EntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
+						$bResult = !!$this->oP8MailModule->getIdentitiesManager()->updateIdentitySignature($iP8EntityId, $oP7Identity->UseSignature, $oP7Identity->Signature);
 						if (!$bResult)
 						{
 							\Aurora\System\Api::Log("Error while Signature creation: " . $oP7Identity->Email, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -816,7 +816,7 @@ class P7ToP8Migration
 		return $bResult;
 	}
 
-	public function ContactP7ToP8($iP7UserId, $iP7ContactId, \Aurora\Modules\Core\Classes\User $oP8User)
+	public function ContactP7ToP8($iP7UserId, $iP7ContactId, $iP8UserEntityId)
 	{
 		$aResult = false;
 		$aContactOptions = [];
@@ -875,7 +875,7 @@ class P7ToP8Migration
 			$oP7Group = $this->oP7ApiContactsManagerFrom->getGroupById($iP7UserId, $iGroupId);
 			if ($oP7Group)
 			{
-				$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name, $oP8User->EntityId);
+				$oP8Group = $this->oP8ContactsDecorator->GetGroupByName($oP7Group->Name, $iP8UserEntityId);
 				if ($oP8Group instanceof \Aurora\Modules\Contacts\Classes\Group)
 				{
 					$aContactOptions["GroupUUIDs"][] = $oP8Group->UUID;
@@ -883,12 +883,14 @@ class P7ToP8Migration
 			}
 		}
 
-		if ($this->oP8ContactsDecorator->CreateContact($aContactOptions, $oP8User->EntityId))
+		if ($this->oP8ContactsDecorator->CreateContact($aContactOptions, $iP8UserEntityId))
 		{
 			$this->oMigrationLog->CurContactId = $iP7ContactId;
 			file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 			$aResult = true;
 		}
+		unset($aContactOptions, $aObgectFieldsConformity, $oP7Group, $oP7Contact, $oP8Group);
+
 		return $aResult;
 	}
 
