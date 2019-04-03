@@ -911,7 +911,7 @@ class Update
 				$migrateCalendars = true;
 			}
 
-			$columnCount = count($row);
+			$columnCount = is_array($row) ? count($row) : 0;
 			if ($columnCount === 3) {
 				echo "The calendars table has 3 columns already. Assuming this part of the migration was already done.\n";
 				$migrateCalendars = false;
