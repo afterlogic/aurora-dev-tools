@@ -340,11 +340,19 @@ class P7ToP8Migration
 				}
 				\Aurora\System\Api::Log("  Settings migrated successfully ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				//DOMAIN
-				$oServer = !$oP7Account->Domain->IsDefaultDomain ? $this->GetServerByName($oP7Account->Domain->Name) : false;
-				if (!$oP7Account->Domain->IsDefaultDomain && !$oServer)
+				$sDomainName = $oP7Account->Domain->IdDomain === 0 ? $oP7Account->Domain->IncomingMailServer : $oP7Account->Domain->Name;
+				$oP7DefaultDomain = $this->oP7ApiDomainsManager->getDefaultDomain();
+				$oServer = $this->GetServerByName($sDomainName);
+				$bServerOwnerIsAccount = $oP7Account->Domain->IdDomain === 0 &&
+					($oP7Account->IncomingMailServer !== $oP7DefaultDomain->IncomingMailServer ||
+					$oP7Account->OutgoingMailServer !== $oP7DefaultDomain->OutgoingMailServer);
+				$oServer = $bServerOwnerIsAccount ? null : $oServer;
+				if (!$oServer && !$bServerOwnerIsAccount)
 				{
-					//create server if not exists and not default
-					$iServerId = $this->DomainP7ToP8($this->oP7ApiDomainsManager->getDomainById($oP7Account->Domain->IdDomain));
+					$oP7Domain = $oP7Account->Domain->IdDomain === 0 ?
+						$oP7DefaultDomain :
+						$this->oP7ApiDomainsManager->getDomainById($oP7Account->Domain->IdDomain);
+					$iServerId = $this->DomainP7ToP8($oP7Domain);
 					if (!$iServerId)
 					{
 						\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->Name, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -569,7 +577,11 @@ class P7ToP8Migration
 			return true;
 		}
 
-		if (!$oServer || $oP7Account->Domain->IdDomain === 0)
+		$oP7DefaultDomain = $this->oP7ApiDomainsManager->getDefaultDomain();
+		$bServerOwnerIsAccount = $oP7Account->Domain->IdDomain === 0 &&
+			($oP7Account->IncomingMailServer !== $oP7DefaultDomain->IncomingMailServer ||
+			$oP7Account->OutgoingMailServer !== $oP7DefaultDomain->OutgoingMailServer);
+		if (!$oServer || $bServerOwnerIsAccount)
 		{
 			$oP7Account->Domain->IncomingMailServer	= $oP7Account->IncomingMailServer;
 			$oP7Account->Domain->IncomingMailPort		= $oP7Account->IncomingMailPort;
@@ -580,7 +592,10 @@ class P7ToP8Migration
 			$oP7Account->Domain->OutgoingMailUseSSL	= $oP7Account->OutgoingMailUseSSL;
 			$oP7Account->Domain->OutgoingMailAuth		= $oP7Account->OutgoingMailAuth;
 
-			$iServerId = $this->DomainP7ToP8($oP7Account->Domain);
+			$iServerId = $this->DomainP7ToP8(
+				$oP7Account->Domain,
+				$bServerOwnerIsAccount ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin
+			);
 			if (!$iServerId)
 			{
 				\Aurora\System\Api::Log("Error while Server creation: " . $oP7Account->Domain->IncomingMailServer, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -933,7 +948,7 @@ class P7ToP8Migration
 		return false;
 	}
 
-	public function DomainP7ToP8(\CDomain $oDomain)
+	public function DomainP7ToP8(\CDomain $oDomain, $sOwnerType = \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin)
 	{
 		$iSievePort = (int) \CApi::GetConf('sieve.config.port', 2000);
 		$aSieveDomains = \CApi::GetConf('sieve.config.domains', array());
@@ -942,7 +957,7 @@ class P7ToP8Migration
 		$bSieveEnabled = \CApi::GetConf('sieve', false) && in_array($oDomain->IncomingMailServer, $aSieveDomains);
 
 		$oServer = new \Aurora\Modules\Mail\Classes\Server(\Aurora\Modules\Mail\Module::GetName());
-		$oServer->OwnerType = $oDomain->IdDomain === 0 ? \Aurora\Modules\Mail\Enums\ServerOwnerType::Account : \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin;
+		$oServer->OwnerType = $sOwnerType;
 		$oServer->TenantId = 0;
 		$oServer->Name = $oDomain->IdDomain === 0 ? $oDomain->IncomingMailServer : $oDomain->Name;
 		$oServer->IncomingServer = $oDomain->IncomingMailServer;
