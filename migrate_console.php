@@ -58,6 +58,7 @@ class P7ToP8Migration
 	public $oP8OAuthIntegratorWebclientModule = null;
 	public $oP8CalendarModuleDecorator = null;
 	public $oP8MtaConnectorModule = null;
+	public $oP8MtaConnectorModuleDecorator = null;
 
 	public $sMigrationLogFile = null;
 	public $sUserListFile = null;
@@ -121,7 +122,9 @@ class P7ToP8Migration
 		$this->oP8CalendarModuleDecorator = \Aurora\System\Api::GetModuleDecorator('Calendar');
 		if (isset($aOptions["mta_mode"]))
 		{
-			$this->oP8MtaConnectorModule = \Aurora\System\Api::GetModule("MtaConnector");
+			$oP8MtaConnectorModule = \Aurora\System\Api::GetModule("MtaConnector");
+			$this->oP8MtaConnectorModule = $oP8MtaConnectorModule;
+			$this->oP8MtaConnectorModuleDecorator = $oP8MtaConnectorModule::Decorator();
 		}
 
 		if (!$this->oP8MailModule instanceof Aurora\Modules\Mail\Module)
@@ -1704,7 +1707,7 @@ class P7ToP8Migration
 				}
 				$this->bFindFetcher = true;
 				//create Fetcher
-				$mFetcherResult = $this->oP8MtaConnectorModule::Decorator()->CreateFetcher(
+				$mFetcherResult = $this->oP8MtaConnectorModuleDecorator->CreateFetcher(
 					$oP8UserId,
 					$oP8AccountId,
 					$oFetcherItem->Folder,
@@ -1738,7 +1741,7 @@ class P7ToP8Migration
 			foreach ($oMailAliases->Aliases as $sP7Alias)
 			{
 				//trying to find Alias in p8 database
-				$aP8Aliases = $this->oP8MtaConnectorModule::Decorator()->GetAliases($oP8UserId);
+				$aP8Aliases = $this->oP8MtaConnectorModuleDecorator->GetAliases($oP8UserId);
 				if ($aP8Aliases && isset($aP8Aliases['Aliases']) && !empty($aP8Aliases['Aliases']))
 				{
 					foreach ($aP8Aliases['Aliases'] as $sP8Alias)
@@ -1756,7 +1759,7 @@ class P7ToP8Migration
 				{
 					$AliasName = $aAliasParts[0];
 					$AliasDomain = $aAliasParts[1];
-					$mResult = $this->oP8MtaConnectorModule::Decorator()->AddNewAlias($oP8UserId, $AliasName, $AliasDomain);
+					$mResult = $this->oP8MtaConnectorModuleDecorator->AddNewAlias($oP8UserId, $AliasName, $AliasDomain);
 					if (!$mResult)
 					{
 						\Aurora\System\Api::Log("Error while Alias creation: " . $sP7Alias, \Aurora\System\Enums\LogLevel::Full, 'migration-');
@@ -1805,7 +1808,7 @@ class P7ToP8Migration
 					else
 					{
 						//create mailing list if not exists
-						$bCreateMailingListResult = $this->oP8MtaConnectorModule::Decorator()->CreateMailingList($this->GetTenant(), (int) $aMtaDomain['DomainId'], $oP7MailingList->Email);
+						$bCreateMailingListResult = $this->oP8MtaConnectorModuleDecorator->CreateMailingList($this->GetTenant(), (int) $aMtaDomain['DomainId'], $oP7MailingList->Email);
 						if ($bCreateMailingListResult)
 						{
 							$mP8MailingListId = $this->oP8MtaConnectorModule->oApiMailingListsManager->getMailingListIdByEmail($oP7MailingList->Email);
@@ -1835,7 +1838,7 @@ class P7ToP8Migration
 								}
 							}
 							//add member to mailing list
-							$bAddMailingListMemberResult = $this->oP8MtaConnectorModule::Decorator()->AddMailingListMember($mP8MailingListId, $sP7Member);
+							$bAddMailingListMemberResult = $this->oP8MtaConnectorModuleDecorator->AddMailingListMember($mP8MailingListId, $sP7Member);
 							if (!$bAddMailingListMemberResult)
 							{
 								\Aurora\System\Api::Log("Error while adding {$sP7Member} memeber to {$oP7MailingList->Email} mailing list. ", \Aurora\System\Enums\LogLevel::Full, 'migration-');
