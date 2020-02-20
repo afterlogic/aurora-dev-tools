@@ -2,6 +2,11 @@
 require_once "../system/autoload.php";
 
 const ROWLIMIT = 1000;
+
+if (php_sapi_name() !== 'cli')
+{
+	exit("Use console");
+}
 \Aurora\System\Db\Pdo\MySql::$bUseReconnect = true;
 \Aurora\System\Api::Init(true);
 
