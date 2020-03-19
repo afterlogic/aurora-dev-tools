@@ -41,6 +41,8 @@ foreach ($aServers as $oServer)
 			exit("Error while Tenant creation");
 		}
 	}
+	$oServer->TenantId = $iNewTenantId;
+	$oEavManager->updateEntity($oServer);
 	//get all account with ServerId === $oServer->EntityId
 	$aGetAccountsResults = $oEavManager->getEntities(
 		'Aurora\Modules\Mail\Classes\Account',
