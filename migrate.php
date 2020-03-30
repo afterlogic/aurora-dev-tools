@@ -1091,6 +1091,8 @@ class P7ToP8Migration
 		{
 			$sDbPort = '';
 			$sUnixSocket = '';
+            $sP8DBHost = $oP8DBHost;
+
 			$iPos = strpos($oP8DBHost, ':');
 			if (false !== $iPos && 0 < $iPos)
 			{
