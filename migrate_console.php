@@ -16,6 +16,11 @@
 $sP7ProductPath = "PATH_TO_YOUR_WEBMAIL_V7_INSTALLATION";
 $sP7ApiPath = $sP7ProductPath . '/libraries/afterlogic/api.php';
 
+if (PHP_SAPI !== 'cli')
+{
+	exit("Use console");
+}
+
 $aLongopts = [
 	"user_list",
 	"skip_sabredav",
