@@ -989,24 +989,24 @@ class P7ToP8Migration
 
 	public function UpgradeDB()
 	{
-		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$sP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 
-		$oP8DBLogin = $this->oP8Settings->DBLogin;
-		$oP8DBPassword = $this->oP8Settings->DBPassword;
-		$oP8DBName = $this->oP8Settings->DBName;
-		$oP8DBPrefix = $this->oP8Settings->DBPrefix;
-		$oP8DBHost = $this->oP8Settings->DBHost;
+		$sP8DBLogin = $this->oP8Settings->DBLogin;
+		$sP8DBPassword = $this->oP8Settings->DBPassword;
+		$sP8DBName = $this->oP8Settings->DBName;
+		$sP8DBPrefix = $this->oP8Settings->DBPrefix;
+		$sP8DBHost = $this->oP8Settings->DBHost;
 
 		//Check if DB exists
 		$sCheckTablesQuery = "SELECT count(*) FROM INFORMATION_SCHEMA.TABLES
-			WHERE table_schema = '{$oP8DBName}'
+			WHERE table_schema = '{$sP8DBName}'
 			AND (
-			   table_name LIKE '{$oP8DBPrefix}eav_entities'
-			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_text'
-			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_bool'
-			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_datetime'
-			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_int'
-			  OR table_name LIKE '{$oP8DBPrefix}eav_attributes_string'
+			   table_name LIKE '{$sP8DBPrefix}eav_entities'
+			  OR table_name LIKE '{$sP8DBPrefix}eav_attributes_text'
+			  OR table_name LIKE '{$sP8DBPrefix}eav_attributes_bool'
+			  OR table_name LIKE '{$sP8DBPrefix}eav_attributes_datetime'
+			  OR table_name LIKE '{$sP8DBPrefix}eav_attributes_int'
+			  OR table_name LIKE '{$sP8DBPrefix}eav_attributes_string'
 			)";
 		try
 		{
@@ -1019,7 +1019,7 @@ class P7ToP8Migration
 				$this->Output("The integrity of the database is broken");
 				return false;
 			}
-			$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$oP8DBName}' ";
+			$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$sP8DBName}' ";
 			$stmt = $this->oP8PDO->prepare($sTablesListQuery);
 			$stmt->execute();
 			$sTablesList = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
@@ -1034,21 +1034,21 @@ class P7ToP8Migration
 		if (!$this->bSkipSabredav)
 		{
 			//Delete tables in P8
-			$sDelTableQuery = "DROP TABLE IF EXISTS `{$oP8DBPrefix}adav_addressbookchanges`,
-				`{$oP8DBPrefix}adav_addressbooks`,
-				`{$oP8DBPrefix}adav_cache`,
-				`{$oP8DBPrefix}adav_calendarchanges`,
-				`{$oP8DBPrefix}adav_calendarobjects`,
-				`{$oP8DBPrefix}adav_calendars`,
-				`{$oP8DBPrefix}adav_calendarsubscriptions`,
-				`{$oP8DBPrefix}adav_cards`,
-				`{$oP8DBPrefix}adav_groupmembers`,
-				`{$oP8DBPrefix}adav_locks`,
-				`{$oP8DBPrefix}adav_principals`,
-				`{$oP8DBPrefix}adav_propertystorage`,
-				`{$oP8DBPrefix}adav_reminders`,
-				`{$oP8DBPrefix}adav_schedulingobjects`,
-				`{$oP8DBPrefix}adav_calendarinstances`
+			$sDelTableQuery = "DROP TABLE IF EXISTS `{$sP8DBPrefix}adav_addressbookchanges`,
+				`{$sP8DBPrefix}adav_addressbooks`,
+				`{$sP8DBPrefix}adav_cache`,
+				`{$sP8DBPrefix}adav_calendarchanges`,
+				`{$sP8DBPrefix}adav_calendarobjects`,
+				`{$sP8DBPrefix}adav_calendars`,
+				`{$sP8DBPrefix}adav_calendarsubscriptions`,
+				`{$sP8DBPrefix}adav_cards`,
+				`{$sP8DBPrefix}adav_groupmembers`,
+				`{$sP8DBPrefix}adav_locks`,
+				`{$sP8DBPrefix}adav_principals`,
+				`{$sP8DBPrefix}adav_propertystorage`,
+				`{$sP8DBPrefix}adav_reminders`,
+				`{$sP8DBPrefix}adav_schedulingobjects`,
+				`{$sP8DBPrefix}adav_calendarinstances`
 			";
 
 			try
@@ -1065,7 +1065,7 @@ class P7ToP8Migration
 
 			try
 			{
-				$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$oP8DBName}' ";
+				$sTablesListQuery = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = '{$sP8DBName}' ";
 				$stmt = $this->oP8PDO->prepare($sTablesListQuery);
 				$stmt->execute();
 				$sTablesList = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
@@ -1082,15 +1082,15 @@ class P7ToP8Migration
 			$this->MoveTables();
 
 			//Rename tables before upgrading
-			$sRenameTablesQuery = "RENAME TABLE {$oP7DBPrefix}adav_addressbooks TO addressbooks,
-				{$oP7DBPrefix}adav_cache TO cache,
-				{$oP7DBPrefix}adav_calendarobjects TO calendarobjects,
-				{$oP7DBPrefix}adav_calendars TO calendars,
-				{$oP7DBPrefix}adav_cards TO cards,
-				{$oP7DBPrefix}adav_groupmembers TO groupmembers,
-				{$oP7DBPrefix}adav_locks TO locks,
-				{$oP7DBPrefix}adav_principals TO principals,
-				{$oP7DBPrefix}adav_reminders TO reminders";
+			$sRenameTablesQuery = "RENAME TABLE {$sP7DBPrefix}adav_addressbooks TO addressbooks,
+				{$sP7DBPrefix}adav_cache TO cache,
+				{$sP7DBPrefix}adav_calendarobjects TO calendarobjects,
+				{$sP7DBPrefix}adav_calendars TO calendars,
+				{$sP7DBPrefix}adav_cards TO cards,
+				{$sP7DBPrefix}adav_groupmembers TO groupmembers,
+				{$sP7DBPrefix}adav_locks TO locks,
+				{$sP7DBPrefix}adav_principals TO principals,
+				{$sP7DBPrefix}adav_reminders TO reminders";
 
 			try
 			{
@@ -1111,11 +1111,11 @@ class P7ToP8Migration
 			}
 			$sUnixSocket = '';
 			$sDbPort = '';
-			$iPos = strpos($oP8DBHost, ':');
+			$iPos = strpos($sP8DBHost, ':');
 			if (false !== $iPos && 0 < $iPos)
 			{
-				$sAfter = substr($oP8DBHost, $iPos + 1);
-				$oP8DBHost = substr($oP8DBHost, 0, $iPos);
+				$sAfter = substr($sP8DBHost, $iPos + 1);
+				$sP8DBHost = substr($sP8DBHost, 0, $iPos);
 				if (is_numeric($sAfter))
 				{
 					$sDbPort = $sAfter;
@@ -1128,10 +1128,10 @@ class P7ToP8Migration
 			//Upgrade sabredav data from 1.8 to 3.0 version
 			$aOutput = null;
 			$iStatus = null;
-			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$oP8DBHost}".
+			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
 			exec($sUpgrade18To20, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1144,10 +1144,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$oP8DBHost}".
+			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
 			exec($sUpgrade20To21, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1160,10 +1160,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$oP8DBHost}".
+			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$oP8DBName}\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
 			exec($sUpgrade21To30, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1176,10 +1176,10 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$oP8DBHost}".
+			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$oP8DBName}\" \"\" {$oP8DBLogin}" . ($oP8DBPassword ? " {$oP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1195,11 +1195,11 @@ class P7ToP8Migration
 		{
 			$sDbPort = '';
 			$sUnixSocket = '';
-			$iPos = strpos($oP8DBHost, ':');
+			$iPos = strpos($sP8DBHost, ':');
 			if (false !== $iPos && 0 < $iPos)
 			{
-				$sAfter = substr($oP8DBHost, $iPos + 1);
-				$sP8DBHost = substr($oP8DBHost, 0, $iPos);
+				$sAfter = substr($sP8DBHost, $iPos + 1);
+				$sP8DBHost = substr($sP8DBHost, 0, $iPos);
 
 				if (is_numeric($sAfter))
 				{
@@ -1210,12 +1210,12 @@ class P7ToP8Migration
 					$sUnixSocket = $sAfter;
 				}
 			}
-			$this->oP8PDO = @new \PDO('mysql:dbname=' . $oP8DBName .
+			$this->oP8PDO = @new \PDO('mysql:dbname=' . $sP8DBName .
 						(empty($sP8DBHost) ? '' : ';host='.$sP8DBHost).
 						(empty($sDbPort) ? '' : ';port='.$sDbPort).
-						(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket), $oP8DBLogin, $oP8DBPassword);
+						(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket), $sP8DBLogin, $sP8DBPassword);
 			//Add prefixes
-			$sPrefix = $oP8DBPrefix . "adav_";
+			$sPrefix = $sP8DBPrefix . "adav_";
 			$sAddPrefixQuery = "RENAME TABLE addressbooks TO {$sPrefix}addressbooks,
 				cache TO {$sPrefix}cache,
 				calendarobjects TO {$sPrefix}calendarobjects,
@@ -1244,7 +1244,7 @@ class P7ToP8Migration
 			\Aurora\System\Api::Log("Drop 'principals' tables: " .  $sDropPrincipalsTablesQuery, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 
 			//Drop backup tables
-			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$oP8DBName}` LIKE '%_old%' OR `Tables_in_{$oP8DBName}` LIKE 'calendars_%' ";
+			$sGetBackupTablesNamesQuery = "SHOW TABLES WHERE `Tables_in_{$sP8DBName}` LIKE '%_old%' OR `Tables_in_{$sP8DBName}` LIKE 'calendars_%' ";
 			$stmt = $this->oP8PDO->prepare($sGetBackupTablesNamesQuery);
 			$stmt->execute();
 			$aBackupTablesNames = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
@@ -1484,7 +1484,7 @@ class P7ToP8Migration
 
 	public function MoveTables()
 	{
-		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$sP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 		$iRowLimit = 1000;
 
 		$aTables = [
@@ -1501,22 +1501,22 @@ class P7ToP8Migration
 
 		foreach ($aTables as $sTableName)
 		{
-			$sGetTableQuery = "SHOW CREATE TABLE `{$oP7DBPrefix}{$sTableName}`";
+			$sGetTableQuery = "SHOW CREATE TABLE `{$sP7DBPrefix}{$sTableName}`";
 			try
 			{
 				$stmt = $this->oP7PDO->prepare($sGetTableQuery);
 				$stmt->execute();
 				$aGetTable = $stmt->fetchAll();
 				$this->oP8PDO->exec($aGetTable[0]['Create Table']);
-				$sSelectRowCount = "SELECT count(*) FROM `{$oP7DBPrefix}{$sTableName}`";
+				$sSelectRowCount = "SELECT count(*) FROM `{$sP7DBPrefix}{$sTableName}`";
 				$stmt = $this->oP7PDO->prepare($sSelectRowCount);
 				$stmt->execute();
 				$iRowCount = (int) $stmt->fetchColumn();
 				$iOffset = 0;
-				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$sP7DBPrefix}{$sTableName}. Migration started", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				while($iOffset < $iRowCount)
 				{
-					$sSelectAllQuery = "SELECT * FROM `{$oP7DBPrefix}{$sTableName}` LIMIT {$iRowLimit} OFFSET {$iOffset}";
+					$sSelectAllQuery = "SELECT * FROM `{$sP7DBPrefix}{$sTableName}` LIMIT {$iRowLimit} OFFSET {$iOffset}";
 					$stmt = $this->oP7PDO->prepare($sSelectAllQuery);
 					$stmt->execute();
 					$aGetTableData = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -1545,14 +1545,14 @@ class P7ToP8Migration
 								$sInsertDataRow = $sInsertDataRow . ', ' . $field;
 							}
 						}
-						$sInsertDataQuery .= "INSERT INTO `{$oP7DBPrefix}{$sTableName}` VALUES ({$sInsertDataRow});\n";
+						$sInsertDataQuery .= "INSERT INTO `{$sP7DBPrefix}{$sTableName}` VALUES ({$sInsertDataRow});\n";
 					}
 					if ($sInsertDataQuery !== '')
 					{
 						$this->oP8PDO->exec($sInsertDataQuery);
 					}
 				}
-				\Aurora\System\Api::Log("    Table: {$oP7DBPrefix}{$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("    Table: {$sP7DBPrefix}{$sTableName}. Migrated successfully", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 			}
 			catch(Exception $e)
 			{
@@ -1566,18 +1566,18 @@ class P7ToP8Migration
 	{
 		$this->Output("Start migration of shared calendars.");
 
-		$oP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
+		$sP7DBPrefix = $this->oP7Settings->GetConf('Common/DBPrefix');
 
 		$sSelectAllSharedCalendarsQuery = "
 			SELECT
-				{$oP7DBPrefix}adav_calendarshares.*,
+				{$sP7DBPrefix}adav_calendarshares.*,
 				prncpl.uri AS member_principal,
 				prncpl.displayname AS member_displayname,
 				clndr.uri AS calendar_uri,
 				clndr.principaluri AS owner_principaluri
-			FROM {$oP7DBPrefix}adav_calendarshares
-			LEFT JOIN {$oP7DBPrefix}adav_principals AS prncpl on prncpl.id = {$oP7DBPrefix}adav_calendarshares.member
-			LEFT JOIN {$oP7DBPrefix}adav_calendars AS clndr on clndr.id = {$oP7DBPrefix}adav_calendarshares.calendarid
+			FROM {$sP7DBPrefix}adav_calendarshares
+			LEFT JOIN {$sP7DBPrefix}adav_principals AS prncpl on prncpl.id = {$sP7DBPrefix}adav_calendarshares.member
+			LEFT JOIN {$sP7DBPrefix}adav_calendars AS clndr on clndr.id = {$sP7DBPrefix}adav_calendarshares.calendarid
 			WHERE prncpl.uri IS NOT NULL
 		";
 		$stmt = $this->oP7PDO->prepare($sSelectAllSharedCalendarsQuery);
