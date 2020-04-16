@@ -945,15 +945,13 @@ class P7ToP8Migration
 
 	public function GetServerByName($sServerName)
 	{
-		$aServers = $this->oP8MailModuleDecorator->GetServers();
-		foreach ($aServers as $oServer)
-		{
-			if ($oServer->Name === $sServerName)
-			{
-				return $oServer;
-			}
-		}
-		return false;
+		$aFilters = ['$AND' => [
+			'Name' => [$sServerName, '='],
+			'OwnerType' => [\Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin, '=']
+		]];
+
+		$oServer = $this->oP8MailModule->getServersManager()->getServerByFilter($aFilters);
+		return $oServer;
 	}
 
 	public function DomainP7ToP8(\CDomain $oDomain, $sOwnerType = \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin)

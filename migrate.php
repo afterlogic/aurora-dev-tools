@@ -392,12 +392,14 @@ class P7ToP8Migration
 				//CONTACTS
 				/* @var $aContactListItems array */
 				$aContactListItems = $this->oP7ApiContactsManagerFrom->getContactItemsWithoutOrder($iP7UserId, 0, 9999);
-				if (count($aContactListItems) === 0)
+				$iTotalContacsCount = count($aContactListItems);
+				if ($iTotalContacsCount === 0)
 				{
 					$this->oMigrationLog->CurContactId = 0;
 					file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
 				}
 				$iContactsCount = 0;
+				$iSkipContactsCount = 0;
 				/* @var $oListItem CContactListItem */
 				foreach ($aContactListItems as $oListItem)
 				{
@@ -405,10 +407,13 @@ class P7ToP8Migration
 					{
 						//skip Contact if already done
 						\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$iSkipContactsCount++;
 						continue;
 					}
 					else if (!$this->bFindContact && $this->oMigrationLog->CurContactId !== 0)
 					{
+						\Aurora\System\Api::Log("Skip contact " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						$iSkipContactsCount++;
 						$this->bFindContact = true;
 						continue;
 					}
@@ -421,6 +426,14 @@ class P7ToP8Migration
 					else
 					{
 						$iContactsCount++;
+						\Aurora\System\Api::Log("	Contact migrated " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+						if ($iContactsCount >= 500)
+						{
+							$sMessage = "	Processed " . ($iContactsCount + $iSkipContactsCount) . " contacts from " . $iTotalContacsCount;
+							$this->Output($sMessage);
+							\Aurora\System\Api::Log($sMessage, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							$this->Redirect();
+						}
 					}
 				}
 				//FILES
@@ -437,10 +450,10 @@ class P7ToP8Migration
 					\Aurora\System\Api::Log("Error: can't write in " . $this->sMigratedUsersFile, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					exit("Error: can't write in " . $this->sMigratedUsersFile);
 				}
-				\Aurora\System\Api::Log("User: $sP7UserEmail Processed " . $iContactsCount . " contacts from " . count($aContactListItems), \Aurora\System\Enums\LogLevel::Full, 'migration-');
+				\Aurora\System\Api::Log("User: $sP7UserEmail Processed " . ($iContactsCount + $iSkipContactsCount) . " contacts from " . $iTotalContacsCount, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				$this->oMigrationLog->CurUserStatus = 0;
 				file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
-				$this->Output("Processed " . $iContactsCount . " contacts from " . count($aContactListItems));
+				$this->Output("Processed " . ($iContactsCount + $iSkipContactsCount) . " contacts from " . $iTotalContacsCount);
 				$this->Redirect();
 			}
 			fclose($rUserListHandle);
@@ -454,7 +467,7 @@ class P7ToP8Migration
 	}
 
 	public function UserP7ToP8(\CAccount $oP7Account, \Aurora\Modules\Core\Classes\User $oP8User)
-	{	
+	{
 		$oP7UserCalendarSettings = $this->oP7ApiUsersManager->getCalUser($oP7Account->IdUser);
 		$oP8User->IsDisabled = $oP7Account ? $oP7Account->IsDisabled : false;
 
@@ -869,15 +882,13 @@ class P7ToP8Migration
 
 	public function GetServerByName($sServerName)
 	{
-		$aServers = $this->oP8MailModuleDecorator->GetServers();
-		foreach ($aServers as $oServer)
-		{
-			if ($oServer->Name === $sServerName)
-			{
-				return $oServer;
-			}
-		}
-		return false;
+		$aFilters = ['$AND' => [
+			'Name' => [$sServerName, '='],
+			'OwnerType' => [\Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin, '=']
+		]];
+
+		$oServer = $this->oP8MailModule->getServersManager()->getServerByFilter($aFilters);
+		return $oServer;
 	}
 
 	public function DomainP7ToP8(\CDomain $oDomain, $sOwnerType = \Aurora\Modules\Mail\Enums\ServerOwnerType::SuperAdmin)
