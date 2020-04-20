@@ -427,11 +427,17 @@ class P7ToP8Migration
 					{
 						$iContactsCount++;
 						\Aurora\System\Api::Log("	Contact migrated " . $oListItem->Id, \Aurora\System\Enums\LogLevel::Full, 'migration-');
-						if ($iContactsCount >= 500)
+						if ($iContactsCount >= 100 && ($iContactsCount + $iSkipContactsCount) < $iTotalContacsCount)
 						{
 							$sMessage = "	Processed " . ($iContactsCount + $iSkipContactsCount) . " contacts from " . $iTotalContacsCount;
 							$this->Output($sMessage);
 							\Aurora\System\Api::Log($sMessage, \Aurora\System\Enums\LogLevel::Full, 'migration-');
+							if ($this->oMigrationLog->CurUserStatus > 1)
+							{
+								$this->oMigrationLog->CurUserStatus--;
+								file_put_contents($this->sMigrationLogFile, json_encode($this->oMigrationLog));
+							}
+							\Aurora\System\Api::Log('	CurUserStatus ' . $this->oMigrationLog->CurUserStatus, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 							$this->Redirect();
 						}
 					}
