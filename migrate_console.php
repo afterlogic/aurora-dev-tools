@@ -44,6 +44,7 @@ class P7ToP8Migration
 	//Number of unsuccessful attempts after which user will be skipped
 	const ATTEMPTS_MAX_NUMBER = 3;
 	const QUOTA_KILO_MULTIPLIER = 1024;
+	const PHP_EXEC = "php";
 
 	public $oP7Settings = false;
 	public $oP7PDO = false;
@@ -1126,7 +1127,7 @@ class P7ToP8Migration
 			//Upgrade sabredav data from 1.8 to 3.0 version
 			$aOutput = null;
 			$iStatus = null;
-			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost}".
+			$sUpgrade18To20 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
 				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
@@ -1142,7 +1143,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost}".
+			$sUpgrade20To21 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
 				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
@@ -1158,7 +1159,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost}".
+			$sUpgrade21To30 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
 				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
@@ -1174,7 +1175,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost}".
+			$sUpgrade30To32 = self::PHP_EXEC . " ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
 				";dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
@@ -1191,6 +1192,7 @@ class P7ToP8Migration
 
 		try
 		{
+			$sP8DBHost = $this->oP8Settings->DBHost;
 			$sDbPort = '';
 			$sUnixSocket = '';
 			$iPos = strpos($sP8DBHost, ':');
