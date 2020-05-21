@@ -478,6 +478,7 @@ class P7ToP8Migration
 				$sTargetPath = $this->sP7UserFiles . "/" . $sP7UserEmail;
 				if ($sP7UserEmail !== '' && is_dir($sTargetPath))
 				{
+					\Aurora\System\Api::Log("	Started copying user files for " . $sP7UserEmail, \Aurora\System\Enums\LogLevel::Full, 'migration-');
 					$sDestinationPath = $this->sP8UserFiles . "/" . $oP8User->UUID;
 					if ($this->oP8MtaConnectorModule)
 					{
@@ -488,6 +489,7 @@ class P7ToP8Migration
 					{
 						$this->CopyDir($sTargetPath, $sDestinationPath);
 					}
+					\Aurora\System\Api::Log("	File copying complete", \Aurora\System\Enums\LogLevel::Full, 'migration-');
 				}
 
 				//add user to migrated-users file
@@ -1339,15 +1341,15 @@ class P7ToP8Migration
 					}
 
 					\copy($sPathDir, $sDestination.'/'.$sRead);
-					if ($sRead === ".sabredav")
-					{
-						$aFilesProperties = unserialize(@file_get_contents($sDestination.'/'.$sRead));
-						if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
-						{
-							$aFilesProperties = $this->RenameFilesOwner($aFilesProperties);
-							@file_put_contents($sDestination.'/'.$sRead, serialize($aFilesProperties));
-						}
-					}
+					// if ($sRead === ".sabredav")
+					// {
+					// 	$aFilesProperties = unserialize(@file_get_contents($sDestination.'/'.$sRead));
+					// 	if (is_array($aFilesProperties) && count($aFilesProperties) > 0)
+					// 	{
+					// 		$aFilesProperties = $this->RenameFilesOwner($aFilesProperties);
+					// 		@file_put_contents($sDestination.'/'.$sRead, serialize($aFilesProperties));
+					// 	}
+					// }
 				}
 				$oDirectory->close();
 			}
@@ -1897,7 +1899,7 @@ else
 		}
 		$oMigration->Start();
 		$oMigration->MigrateEmptyDomains();
-		$oMigration->UpdateUserFilesInfo();
+		// $oMigration->UpdateUserFilesInfo();
 	}
 	catch (Exception $e)
 	{
