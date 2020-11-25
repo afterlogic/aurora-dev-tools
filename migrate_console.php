@@ -1132,7 +1132,7 @@ class P7ToP8Migration
 			$sUpgrade18To20 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade18To20, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1148,7 +1148,7 @@ class P7ToP8Migration
 			$sUpgrade20To21 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade20To21, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1164,7 +1164,7 @@ class P7ToP8Migration
 			$sUpgrade21To30 = self::PHP_EXEC . " ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade21To30, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1180,7 +1180,7 @@ class P7ToP8Migration
 			$sUpgrade30To32 = self::PHP_EXEC . " ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost}".
 				(empty($sDbPort) ? '' : ';port='.$sDbPort).
 				(empty($sUnixSocket) ? '' : ';unix_socket='.$sUnixSocket).
-				";dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+				";dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
