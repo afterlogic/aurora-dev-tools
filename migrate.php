@@ -1055,7 +1055,7 @@ class P7ToP8Migration
 			//Upgrade sabredav data from 1.8 to 3.2 version
 			$aOutput = null;
 			$iStatus = null;
-			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+			$sUpgrade18To20 = "php ../vendor/sabre/dav/bin/migrateto20.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade18To20, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1068,7 +1068,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+			$sUpgrade20To21 = "php ../vendor/sabre/dav/bin/migrateto21.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade20To21, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1081,7 +1081,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+			$sUpgrade21To30 = "php ../vendor/sabre/dav/bin/migrateto30.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade21To30, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
@@ -1094,7 +1094,7 @@ class P7ToP8Migration
 
 			unset($aOutput);
 			unset($iStatus);
-			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " {$sP8DBPassword}" : "");
+			$sUpgrade30To32 = "php ../vendor/afterlogic/dav/bin/migrateto32.php \"mysql:host={$sP8DBHost};dbname={$sP8DBName}\" \"\" {$sP8DBLogin}" . ($sP8DBPassword ? " '{$sP8DBPassword}'" : "");
 			exec($sUpgrade30To32, $aOutput, $iStatus);
 			if ($iStatus !== 0)
 			{
