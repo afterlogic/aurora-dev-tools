@@ -1,4 +1,8 @@
 <?php
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
 function file_force_contents($filename, $data, $flags = 0)
 {
     if (!is_dir(dirname($filename))) {
@@ -53,71 +57,87 @@ foreach ($aModulesList as $sModuleName) {
     $aNewParametersList = [];
     $bCommentAdded = false;
 
-    foreach ($aParametersList as $sParamName => $aParamValue) {
-        switch (true) {
-            //both parameter and comment are exist
-            case (substr($sParamName, -12) === '_Description' && isset($aParametersList[substr($sParamName, 0, -12)])):
-                $aNewParametersList[substr($sParamName, 0, -12)] = $aParametersList[substr($sParamName, 0, -12)];
-                $aNewParametersList[$sParamName] = $aParamValue;
-                break;
-                //got a param without a comment
-            case (substr($sParamName, -12) !== '_Description'):
-                $sParamCommentName = $sParamName.'_Description';
-                $bCommentExists = isset($aParametersList[$sParamCommentName]);
-
-                if (!$bCommentExists) {
+    if ($aParametersList !== null && json_last_error() === JSON_ERROR_NONE) {
+        foreach ($aParametersList as $sParamName => $aParamValue) {
+            switch (true) {
+                //both parameter and comment are exist
+                case (substr($sParamName, -12) === '_Description' && isset($aParametersList[substr($sParamName, 0, -12)])):
+                    $aNewParametersList[substr($sParamName, 0, -12)] = $aParametersList[substr($sParamName, 0, -12)];
                     $aNewParametersList[$sParamName] = $aParamValue;
-                    $aNewParametersList[$sParamCommentName] = ["", "string"];
-                    $bCommentAdded = true;
+                    break;
+                    //got a param without a comment
+                case (substr($sParamName, -12) !== '_Description'):
+                    $sParamCommentName = $sParamName.'_Description';
+                    $bCommentExists = isset($aParametersList[$sParamCommentName]);
+
+                    if (!$bCommentExists) {
+                        $aNewParametersList[$sParamName] = $aParamValue;
+                        $aNewParametersList[$sParamCommentName] = ["", "string"];
+                        $bCommentAdded = true;
+                    }
+                    break;
+                    //removing orphan comment
+                case (substr($sParamName, -12) === '_Description'):
+                    // $bParamExists = isset($aParametersList[substr($sParamName, 0, -8)]);
+                    break;
+            }
+        }
+
+        if ($bCommentAdded) {
+            echo "Modified " . $sModuleName . " module's config\n";
+        }
+
+        // ksort($aParametersList);
+
+        $output = json_encode($aNewParametersList, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+        // replace duplicated spaces and tabs in descriptions
+        $output = preg_replace('/(?<=\S)(\h{1,})(?=.*\")/', ' ', $output);
+        // $output = preg_replace('/(?<!\\\)\"(\h{1,})|(?<=\S)(\h{1,})\"/', '', $output);
+
+        //make 2 spaces indents instead of 4 spaces
+        // $output = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $output);
+        //make tabs indents instead of spaces
+        $output = preg_replace('/    /', "\t", $output);
+
+        if (json_last_error() === JSON_ERROR_NONE) {
+            $result = file_put_contents($sModulesPath . $sModuleName . "/config.json", $output);
+
+            //generating HTML
+            $mainHtml .= "<a name=\"".$sModuleName."\"></a>\n";
+            $mainHtml .= "<h2>".$sModuleName."</h2>\n";
+            $mainHtml .= "<dl>\n";
+            
+            $contentHtml .= "\t<li><a href=\"#".$sModuleName."\">".$sModuleName."</a></li>\n";
+            
+            // $sFileContent = file_get_contents($sModulesPath . $sModuleName . "/config.json");
+            // $aParametersList = json_decode($sFileContent, true);
+
+            $aNewParametersListHTML = [
+                'Disabled' => $aNewParametersList['Disabled'],
+                'Disabled_Description' => $aNewParametersList['Disabled_Description']
+            ];
+            $aNewParametersList = $aNewParametersListHTML + removeKeysFromAssociativeArray($aNewParametersList, ['Disabled', 'Disabled_Description']);
+
+            foreach ($aNewParametersList as $sParamName => $aParamValue) {
+                if (substr($sParamName, -12) === '_Description') {
+                    $mainHtml .= "\t<dt>".substr($sParamName, 0, -12)."</dt>\n";
+                    $mainHtml .= "\t<dd>".$aParamValue[0]."</dd>\n";
                 }
-                break;
-                //removing orphan comment
-            case (substr($sParamName, -12) === '_Description'):
-                // $bParamExists = isset($aParametersList[substr($sParamName, 0, -8)]);
-                break;
+            }
+            $mainHtml .= "</dl>\n";
+
+        } else {
+            echo 'ERROR in '.$sModuleName.': ' . json_last_error_msg();
         }
+
+
+        $sConfigCopyName = $sModulesCopyPath . $sModuleName . "/config" . ($bCommentAdded ? "_modifiled" : "") . ".json";
+        $result = file_force_contents($sConfigCopyName, $output);
+
+        
+    } else {
+        echo 'ERROR parsing ' . $sModuleName . ': ' . json_last_error_msg();
     }
-
-    if ($bCommentAdded) {
-        echo "Modified " . $sModuleName . " module's config\n";
-    }
-
-    // ksort($aParametersList);
-
-    $output = json_encode($aNewParametersList, JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
-    //make 2 spaces indents instead of 4 spaces
-    $output = preg_replace('/^(  +?)\\1(?=[^ ])/m', '$1', $output);
-    //make tabs indents instead of spaces
-    $output = preg_replace('/  /', "\t", $output);
-
-    $result = file_put_contents($sModulesPath . $sModuleName . "/config.json", $output);
-
-    $sConfigCopyName = $sModulesCopyPath . $sModuleName . "/config" . ($bCommentAdded ? "_modifiled" : "") . ".json";
-    $result = file_force_contents($sConfigCopyName, $output);
-
-    //generating HTML
-    $sFileContent = file_get_contents($sModulesPath . $sModuleName . "/config.json");
-
-    $mainHtml .= "<a name=\"".$sModuleName."\"></a>\n";
-    $mainHtml .= "<h2>".$sModuleName."</h2>\n";
-    $mainHtml .= "<dl>\n";
-
-    $contentHtml .= "\t<li><a href=\"#".$sModuleName."\">".$sModuleName."</a></li>\n";
-
-    $aParametersList = json_decode($sFileContent, true);
-    $aNewParametersList = [
-        'Disabled' => $aParametersList['Disabled'],
-        'Disabled_Description' => $aParametersList['Disabled_Description']
-    ];
-    $aParametersList = $aNewParametersList + removeKeysFromAssociativeArray($aParametersList, ['Disabled', 'Disabled_Description']);
-
-    foreach ($aParametersList as $sParamName => $aParamValue) {
-        if (substr($sParamName, -12) === '_Description') {
-            $mainHtml .= "\t<dt>".substr($sParamName, 0, -12)."</dt>\n";
-            $mainHtml .= "\t<dd>".$aParamValue[0]."</dd>\n";
-        }
-    }
-    $mainHtml .= "</dl>\n";
 }
 
 $outputHtml = "<html><head>\n";
