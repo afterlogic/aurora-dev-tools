@@ -1,30 +1,31 @@
 #!/bin/bash
 
-# eval $(ssh-agent)
-# ssh-add ~/.ssh/id_rsa
+eval $(ssh-agent)
+ssh-add ~/.ssh/id_rsa
 
 update_push () 
 {
 	#prepare tags
-	loginWithPassword=$1":"$2"@github.com"
-	loginWithAt=$1"@"
-	emptyString=""
-	guthubString="github.com"
+	# loginWithPassword=$1":"$2"@github.com"
+	# loginWithAt=$1"@"
+	# emptyString=""
+	# guthubString="github.com"
 
-	url="$(git config --get remote.origin.url)"
-	url="${url/$loginWithAt/$emptyString}"
-	resultUrl="${url/$guthubString/$loginWithPassword}"
+	# url="$(git config --get remote.origin.url)"
+	# url="${url/$loginWithAt/$emptyString}"
+	# resultUrl="${url/$guthubString/$loginWithPassword}"
 	
 	#pull
 	# git pull
 	
 	#add tag
-	if [[ "$3" != "" ]]; then
-		git tag -a "$3" -m ""
+	if [[ "$1" != "" ]]; then
+		git tag -a "$1" -m ""
 	fi
 
 	#push changes
-	git push --repo $resultUrl --tags
+	# git push --repo $resultUrl --tags
+	git push --tags
 } 
 
 get_next_version ()
@@ -60,8 +61,8 @@ get_next_version ()
 	fi
 }
 
-read -p "GitHub Login: " login
-read -p "GitHub Password: " password
+# read -p "GitHub Login: " login
+# read -p "GitHub Password: " password
 read -p "Tag name: " tag
 
 cd ../modules
@@ -86,7 +87,8 @@ do
 	else
 		echo "${DESCRIBE}->${new_tag}"
 	
-		update_push $login $password "$new_tag"
+		# update_push $login $password "$new_tag"
+		update_push "$new_tag"
 	fi
 	echo "";
 
