@@ -21,7 +21,7 @@ if (file_exists($sMdFile) && file_exists($sDocsFile))
 	
 	if ($sOverviewtext && $sDoc) 
 	{
-		$sDoc = preg_replace("/id=\"content\".*(?:\r)*(?:\n)*.*<\/h1>/", "$0" . $sOverviewtext, $sDoc);
+		$sDoc = preg_replace("/class=\"layout-content\".*(?:\r)*(?:\n)*.*<\/h1>/", "$0" . $sOverviewtext, $sDoc);
 		file_put_contents($sDocsFile, $sDoc);
 		
 		echo "Overview was saccessully added \r\n";
