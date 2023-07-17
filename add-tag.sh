@@ -3,46 +3,37 @@
 eval $(ssh-agent)
 ssh-add ~/.ssh/id_rsa
 
+RED='\033[1;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[1;32m'
+NC='\033[0m' # No Color
+
 update_push () 
 {
-	#prepare tags
-	# loginWithPassword=$1":"$2"@github.com"
-	# loginWithAt=$1"@"
-	# emptyString=""
-	# guthubString="github.com"
-
-	# url="$(git config --get remote.origin.url)"
-	# url="${url/$loginWithAt/$emptyString}"
-	# resultUrl="${url/$guthubString/$loginWithPassword}"
-	
-	#pull
-	# git pull
-	
-	#add tag
+	#adding tag
 	if [[ "$1" != "" ]]; then
 		git tag -a "$1" -m ""
 	fi
 
-	#push changes
-	# git push --repo $resultUrl --tags
+	#pushing changes
 	git push --tags
 } 
 
 get_next_version ()
 {
 	# DESCRIBE=$(git describe --tags $(git rev-list --tags --max-count=1) --abbrev=0);
-	DESCRIBE=$(git describe --tags --abbrev=0);
+	# DESCRIBE=$(git describe --tags --abbrev=0);
+	TAG=$1
 
-	# increment the build number (ie 115 to 116)
-	VERSION=`echo $DESCRIBE | awk '{split($0,a,"."); print a[1]}'`
-	BUILD=`echo $DESCRIBE | awk '{split($0,a,"."); print a[2]}'`
-	PATCH=`echo $DESCRIBE | awk '{split($0,a,"."); print a[3]}'`
+	VERSION=`echo $TAG | awk '{split($0,a,"."); print a[1]}'`
+	BUILD=`echo $TAG | awk '{split($0,a,"."); print a[2]}'`
+	PATCH=`echo $TAG | awk '{split($0,a,"."); print a[3]}'`
 	
 	if [[ "$(git describe --tags)" =~ -+ ]]; then
-		if [[ "${DESCRIBE}" =~ ^[0-9]+$ ]]; then
+		if [[ "${TAG}" =~ ^[0-9]+$ ]]; then
 			VERSION="0.0.0"
 			BUILD=`git rev-list HEAD --count`
-			PATCH=${DESCRIBE}
+			PATCH=${TAG}
 		fi
 
 		if [ "${BUILD}" = "" ]; then
@@ -50,47 +41,63 @@ get_next_version ()
 		fi
 
 		if [ "${PATCH}" = "" ]; then
-			PATCH=$DESCRIBE
+			PATCH=$TAG
 		fi
 		
 		PATCH=$((PATCH+1))
 		
-		next_tag=${VERSION}.${BUILD}.${PATCH}
+		echo ${VERSION}.${BUILD}.${PATCH}
 	else
-		next_tag=""
+		echo ""
 	fi
 }
 
-# read -p "GitHub Login: " login
-# read -p "GitHub Password: " password
-read -p "Tag name: " tag
+printf "${YELLOW}Pelase provide common tag to all modules:${NC} [empty]"
+read -p "" DEFAULT_TAG
+if [ "${DEFAULT_TAG}" = "" ]; then
+	printf "${GREEN}Common tag is not provided${NC} \n\n"
+else
+	printf "${GREEN}Common tag is: ${RED}${DEFAULT_TAG}${NC} \n\n"
+fi
+
+printf "${YELLOW}Checking modules..${NC} \n\n"
 
 cd ../modules
-# cd ../modules/StandardLoginFormWebclient
-# cd ../modules/TwoFactorAuth
 
 for dir in $(find . -name ".git")
 do
-   cd ${dir%/*} > /dev/null
-    
-	echo ${dir%/*}
+   	cd ${dir%/*} > /dev/null
 
-	if [ "${tag}" = "" ]; then
-		get_next_version
-		new_tag=$next_tag
+	printf "${GREEN}${dir%/*}${NC} \n"
+
+	if [ "${DEFAULT_TAG}" = "" ]; then
+		LATEST_TAG=$(git describe --tags --abbrev=0);
+		NEXT_TAG=$(get_next_version $LATEST_TAG)
+		NEW_TAG=$NEXT_TAG
 	else
-		new_tag=$tag
+		NEW_TAG=$DEFAULT_TAG
 	fi
-	
-	if [ "${next_tag}" = "" ]; then
-		echo "No tag update is needed. The latest tag is ${DESCRIBE}"
+
+	if [ "${NEXT_TAG}" = "" ]; then
+		printf "No tag update is needed. The latest tag is ${GREEN}${LATEST_TAG}${NC} \n"
 	else
-		echo "${DESCRIBE}->${new_tag}"
-	
-		# update_push $login $password "$new_tag"
-		update_push "$new_tag"
+		printf "${GREEN}${LATEST_TAG}${NC} > ${RED}${NEW_TAG}${NC} \n"
+		LATEST_COMMITS=$(git log $LATEST_TAG..HEAD --oneline --no-decorate)
+		printf "${YELLOW}Latest commits are the following:${NC}\n"
+		printf "$LATEST_COMMITS \n"
+		
+		CONFIRM_TAG=false
+		while true; do
+			printf "${YELLOW}Do you want to add tag: ${RED}${NEW_TAG} ${YELLOW}?${NC} (y/n) \n"
+			read -s -n 1 -p "" CONFIRM_TAG
+			case $CONFIRM_TAG in
+				y ) printf $CONFIRM_TAG && update_push "$NEW_TAG" && break;;
+				n ) printf $CONFIRM_TAG && break;;
+				* ) printf "${RED}Please answer y or n${NC}\n";;
+			esac
+		done
 	fi
 	echo "";
 
-   cd -  > /dev/null
+	cd - > /dev/null
 done
