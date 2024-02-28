@@ -259,7 +259,7 @@ class Helper
                 \Aurora\Modules\Contacts\Classes\VCard\Helper::UpdateVCardFromContact($oContact, $oVCard);
                 $oAddressBook->createFile($sDavContactsUID, $oVCard->serialize());
 
-                $oContactItem = self::getCard($oAddressBook, $sDavContactsUID . '.vcf');
+                $oContactItem = self::getCard($oAddressBook, $sDavContactsUID);
                 if ($oContactItem) {
                     self::updateContactCardProperties($oContactItem, $oContact);
                 }
