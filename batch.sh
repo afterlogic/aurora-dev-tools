@@ -39,7 +39,7 @@ fi
 
 cd ../modules
 
-for dir in $(find . -name ".git")
+for dir in $(find . -name ".git" | sort)
 do
     cd ${dir%/*} > /dev/null
 	echo ${dir%/*}
