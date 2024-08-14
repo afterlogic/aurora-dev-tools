@@ -179,6 +179,49 @@ function updatePassword($class, $passwordPropName, $oldSalt, $newSalt, $count, $
             $output->writeln('Account class not found');
         }
 
+        // update encrypted data in configs
+        $question = new ConfirmationQuestion('Update encrypted data in configs [no]', false);
+        if ($helper->ask($input, $output, $question)) {
+            $settings = [
+                'CpanelIntegrator' => 'CpanelPassword',
+                'LdapChangePasswordPlugin' => 'BindPassword',
+                'MailChangePasswordFastpanelPlugin' => 'FastpanelAdminPass',
+                'MailChangePasswordHmailserverPlugin' => 'AdminPass',
+                'MailChangePasswordIredmailPlugin' => 'DbPass',
+                'MailChangePasswordIspconfigPlugin' => 'DbPass',
+                'MailChangePasswordIspmanagerPlugin' => 'ISPmanagerPass',
+                'MailChangePasswordVirtualminPlugin' => 'VirtualminAdminPass',
+                'MailSignupDirectadmin' => 'AdminPassword',
+                'MailSignupFastpanel' => 'FastpanelAdminPass',
+                'MailSignupPlesk' => 'PleskAdminPassword',
+                'RocketChatWebclient' => 'AdminPassword',
+                'StandardResetPassword' => 'NotificationPassword',
+                'TeamContactsLdap' => 'BindPassword',
+            ];
+
+            foreach ($settings as $moduleName => $configName) {
+                $output->writeln("Module: $moduleName, ConfigName: $configName");
+                $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
+                if ($configValue) {
+                    Api::$sSalt = $oldSalt;
+                    $value = \Aurora\System\Utils::DecryptValue($configValue);
+        
+                    if ($value) {
+                        Api::$sSalt = $newSalt;
+                        $value = \Aurora\System\Utils::EncryptValue($value);
+                        Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
+                        Api::$oModuleManager->saveModuleConfigValue($moduleName);
+
+                        $output->writeln("Config updated");
+                    } else {
+                        $output->writeln("Can't decrypt config value");
+                    }
+                } else {
+                    $output->writeln("Config not found");
+                }
+            }
+        }
+
         if (file_exists($bakSaltPath)) {
             $question = new ConfirmationQuestion('Remove backup salt-file? [no]', false);
             if ($helper->ask($input, $output, $question)) {
