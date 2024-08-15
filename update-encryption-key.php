@@ -4,9 +4,10 @@ if (PHP_SAPI !== 'cli') {
     exit("Use the console for running this script");
 }
 
-include_once 'system/autoload.php';
+include_once '../system/autoload.php';
 
 use Aurora\Api;
+use Aurora\Modules\Core\Models\User;
 use Aurora\Modules\Mail\Models\Fetcher;
 use Aurora\Modules\Mail\Models\MailAccount;
 use Aurora\Modules\Mail\Models\Server;
@@ -22,38 +23,109 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
-function updatePassword($class, $passwordPropName, $oldSalt, $newSalt, $count, $output) {
+function updateCryptedProp($class, $shortClassName, $propNames, $oldSalt, $newSalt, $count, $output) {
     $progressBar = new ProgressBar($output, $count);
     $progressBar->setFormat('verbose');
     $progressBar->setBarCharacter('<info>=</info>');
 
     $progressBar->start();
-    $aSkipedAccounts = [];
-    $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->chunk(10000, (function ($items) use ($passwordPropName, $oldSalt, $newSalt, $progressBar, &$aSkipedAccounts) {
+    $aSkipedProps = [];
+
+    if (!is_array($propNames)) {
+        $propNames = [$propNames];
+    }
+    $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->chunk(10000, function ($items) use ($propNames, $oldSalt, $newSalt, $progressBar, &$aSkipedProps) {
         foreach ($items as $item) {
-            Api::$sSalt = $oldSalt;
-            $passsword = $item->{$passwordPropName};
+            foreach ($propNames as $propName) {
+                Api::$sSalt = $oldSalt;
+                $propValue = $item->{$propName};
+                if ($propValue) {
+                    $decryptedValue = \Aurora\System\Utils::DecryptValue($propValue);
 
-            if ($passsword) {
-                Api::$sSalt = $newSalt;
-                $item->{$passwordPropName} = $passsword;
-
-                $item->setExtendedProp('SaltIsUpdated', true);
-
-                if ($item->save()) {
-                    $progressBar->advance();
+                    Api::$sSalt = $newSalt;
+                    if ($decryptedValue) {
+                        $item->{$propName} = \Aurora\System\Utils::EncryptValue($decryptedValue);
+                    } else {
+                        $item->{$propName} = $propValue;
+                    }
                 } else {
-                    // log
+                    if (!isset($aSkipedProps[$propName])) {
+                        $aSkipedProps[$propName] = [];
+                    }
+                    if (!in_array($item->Id, $aSkipedProps[$propName])) {
+                        $aSkipedProps[$propName][] = $item->Id;
+                    }
                 }
+            }
+            $item->setExtendedProp('SaltIsUpdated', true);
+            if ($item->save()) {
+                $progressBar->advance();
             } else {
-                $aSkipedAccounts[] = $item->Id;
+                // log
             }
         }
-    }));
+    });
     $progressBar->finish();
     $output->writeln('');
-    if ($aSkipedAccounts) {
-        $output->writeln('Can\'t read password for ' . $class . ': ' . implode(', ', $aSkipedAccounts));
+    if ($aSkipedProps) {
+        foreach ($aSkipedProps as $propName => $ids) {
+            if (count($ids) === 0) {
+                unset($aSkipedProps[$propName]);
+            }
+        }            
+        $output->writeln("Can't read encrypted property for $shortClassName");
+        foreach ($aSkipedProps as $propName => $ids) {
+            $output->writeln($propName . ': ' . implode(', ', $ids));       
+        }
+    }
+}
+
+function updateCryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output) {
+    $output->write("$moduleName->$configName: ");
+    $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
+    if ($configValue) {
+        Api::$sSalt = $oldSalt;
+        $value = \Aurora\System\Utils::DecryptValue($configValue);
+
+        if ($value) {
+            Api::$sSalt = $newSalt;
+            $value = \Aurora\System\Utils::EncryptValue($value);
+            Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
+            Api::$oModuleManager->saveModuleConfigValue($moduleName);
+
+            $output->writeln("Config updated");
+        } else {
+            $output->writeln("Can't decrypt config value");
+        }
+    } else {
+        $output->writeln("Config not found");
+    }
+}
+
+function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $helper, $force) {
+
+    $shortClassName = (new \ReflectionClass($class))->getShortName();
+
+    $output->writeln("Process $shortClassName objects");
+    if (class_exists($class)) {
+        if ($force) {
+            $class::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
+        }
+
+        $allObjectsCount = $class::count();
+        $objectsCount = $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
+        
+        $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
+        if ($objectsCount > 0) {
+            $question = new ConfirmationQuestion('Update crypted properties for them? [yes]', true);
+            if ($helper->ask($input, $output, $question)) {
+                updateCryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
+            }
+        } else {
+            $output->writeln('No objects found');
+        }
+    } else {
+        $output->writeln("$shortClassName class not found");
     }
 }
 
@@ -88,95 +160,22 @@ function updatePassword($class, $passwordPropName, $oldSalt, $newSalt, $count, $
             $output->writeln('Salt file not foud');
         }
 
-        $output->writeln('Old salt: ' . $oldSalt);
-        $output->writeln('New salt: ' . $newSalt);
+        $output->writeln("Old salt: $oldSalt");
+        $output->writeln("New salt: $newSalt");
+        $output->writeln("");
 
-        if (class_exists("\Aurora\Modules\Mail\Models\MailAccount")) {
+        // update encrypted data for classes
+        $objects = [
+            "\Aurora\Modules\Mail\Models\MailAccount" => ['IncomingPassword'],
+            "\Aurora\Modules\Mail\Models\Fetcher" => ['IncomingPassword'],
+            "\Aurora\Modules\Mail\Models\Server" => ['SmtpPassword'],
+            "\Aurora\Modules\StandardAuth\Models\Account" => ['Password'],
+            "\Aurora\Modules\Core\Models\User" => ['TwoFactorAuth::BackupCodes', 'TwoFactorAuth::Secret']
+        ];
 
-            if ($force) {
-                MailAccount::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
-            }
-
-            $output->writeln('Process mail accounts');
-            $allMailAccountsCount = MailAccount::count();
-            $mailAccountsCount = MailAccount::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
-            
-            $output->writeln($allMailAccountsCount . ' mail account(s) found, ' . $mailAccountsCount . ' of them have not yet been updated');
-            if ($mailAccountsCount > 0) {
-                $question = new ConfirmationQuestion('Update the password for them? [yes]', true);
-                if ($helper->ask($input, $output, $question)) {
-                    updatePassword(MailAccount::class, 'IncomingPassword', $oldSalt, $newSalt, $mailAccountsCount, $output);
-                }
-            } else {
-                $output->writeln('No mail accounts found');
-            }
-        } else {
-            $output->writeln('MailAccount class not found');
-        }
-
-        if (class_exists("\Aurora\Modules\Mail\Models\Fetcher") && Capsule::schema()->hasTable((new Fetcher())->getTable())) {
-            if ($force) {
-                Fetcher::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
-            }
-
-            $output->writeln('Process fetchers');
-            $allFetchersCount = Fetcher::count();
-            $fetchersCount = Fetcher::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
-            $output->writeln($allFetchersCount . ' fetcher(s) found, ' . $fetchersCount . ' of them have not yet been updated');
-            if ($fetchersCount > 0) {
-                $question = new ConfirmationQuestion('Update the password for them? [yes]', true);
-                if ($helper->ask($input, $output, $question)) {
-                    updatePassword(Fetcher::class, 'IncomingPassword', $oldSalt, $newSalt, $fetchersCount, $output);
-                }
-            } else {
-                $output->writeln('No fetchers found');
-            }
-        } else {
-            $output->writeln('Fetcher class not found');
-        }
-
-        if (class_exists("\Aurora\Modules\Mail\Models\Server")) {
-
-            if ($force) {
-                Server::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
-            }
-
-            $output->writeln('Process servers');
-            $allServersCount = Server::count();
-            $serversCount = Server::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
-            $output->writeln($allServersCount . ' server(s) found, ' . $serversCount . ' of them have not yet been updated');
-            if ($serversCount > 0) {
-                $question = new ConfirmationQuestion('Update the password for them? [yes]', true);
-                if ($helper->ask($input, $output, $question)) {
-                    updatePassword(Server::class, 'SmtpPassword', $oldSalt, $newSalt, $serversCount, $output);
-                }
-            } else {
-                $output->writeln('No servers found');
-            }
-        } else {
-            $output->writeln('Server class not found');
-        }
-
-        if (class_exists("\Aurora\Modules\StandardAuth\Models\Account")) {
-
-            if ($force) {
-                Account::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
-            }
-
-            $output->writeln('Process standard auth accounts');
-            $allAccountsCount = Account::count();
-            $accountsCount = Account::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
-            $output->writeln($allAccountsCount . ' account(s) found, ' . $accountsCount . ' of them have not yet been updated');
-            if ($accountsCount > 0) {
-                $question = new ConfirmationQuestion('Update the password for them? [yes]', true);
-                if ($helper->ask($input, $output, $question)) {
-                    updatePassword(Account::class, 'Password', $oldSalt, $newSalt, $accountsCount, $output);
-                }
-            } else {
-                $output->writeln('No standard auth accounts found');
-            }
-        } else {
-            $output->writeln('Account class not found');
+        foreach ($objects as $class => $props) {
+            processObject($class, $props, $oldSalt, $newSalt, $input, $output, $helper, $force);
+            $output->writeln("");
         }
 
         // update encrypted data in configs
@@ -200,32 +199,16 @@ function updatePassword($class, $passwordPropName, $oldSalt, $newSalt, $count, $
             ];
 
             foreach ($settings as $moduleName => $configName) {
-                $output->writeln("Module: $moduleName, ConfigName: $configName");
-                $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
-                if ($configValue) {
-                    Api::$sSalt = $oldSalt;
-                    $value = \Aurora\System\Utils::DecryptValue($configValue);
-        
-                    if ($value) {
-                        Api::$sSalt = $newSalt;
-                        $value = \Aurora\System\Utils::EncryptValue($value);
-                        Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
-                        Api::$oModuleManager->saveModuleConfigValue($moduleName);
-
-                        $output->writeln("Config updated");
-                    } else {
-                        $output->writeln("Can't decrypt config value");
-                    }
-                } else {
-                    $output->writeln("Config not found");
-                }
+                updateCryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output);
             }
+            $output->writeln("");
         }
 
         if (file_exists($bakSaltPath)) {
             $question = new ConfirmationQuestion('Remove backup salt-file? [no]', false);
             if ($helper->ask($input, $output, $question)) {
                 unlink($bakSaltPath);
+                $output->writeln("");
             }
         }
 
