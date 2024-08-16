@@ -76,24 +76,26 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $new
 }
 
 function updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output) {
-    $output->write("$moduleName->$configName: ");
-    $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
-    if ($configValue) {
-        Api::$sSalt = $oldSalt;
-        $value = \Aurora\System\Utils::DecryptValue($configValue);
+    if (Api::$oModuleManager->isModuleLoaded($moduleName)) {
+        $output->write("$moduleName->$configName: ");
+        $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
+        if ($configValue) {
+            Api::$sSalt = $oldSalt;
+            $value = \Aurora\System\Utils::DecryptValue($configValue);
 
-        if ($value) {
-            Api::$sSalt = $newSalt;
-            $value = \Aurora\System\Utils::EncryptValue($value);
-            Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
-            Api::$oModuleManager->saveModuleConfigValue($moduleName);
+            if ($value) {
+                Api::$sSalt = $newSalt;
+                $value = \Aurora\System\Utils::EncryptValue($value);
+                Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
+                Api::$oModuleManager->saveModuleConfigValue($moduleName);
 
-            $output->writeln("Config updated");
+                $output->writeln("Config file updated");
+            } else {
+                $output->writeln("Can't decrypt config value");
+            }
         } else {
-            $output->writeln("Can't decrypt config value");
+            $output->writeln("Config value not found");
         }
-    } else {
-        $output->writeln("Config not found");
     }
 }
 
