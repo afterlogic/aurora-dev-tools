@@ -7,11 +7,6 @@ if (PHP_SAPI !== 'cli') {
 include_once '../system/autoload.php';
 
 use Aurora\Api;
-use Aurora\Modules\Core\Models\User;
-use Aurora\Modules\Mail\Models\Fetcher;
-use Aurora\Modules\Mail\Models\MailAccount;
-use Aurora\Modules\Mail\Models\Server;
-use Aurora\Modules\StandardAuth\Models\Account;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -19,11 +14,10 @@ use Symfony\Component\Console\SingleCommandApplication;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Helper\ProgressBar;
-use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
-function updateCryptedProp($class, $shortClassName, $propNames, $oldSalt, $newSalt, $count, $output) {
+function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $newSalt, $count, $output) {
     $progressBar = new ProgressBar($output, $count);
     $progressBar->setFormat('verbose');
     $progressBar->setBarCharacter('<info>=</info>');
@@ -72,15 +66,16 @@ function updateCryptedProp($class, $shortClassName, $propNames, $oldSalt, $newSa
             if (count($ids) === 0) {
                 unset($aSkipedProps[$propName]);
             }
-        }            
+        }
         $output->writeln("Can't read encrypted property for $shortClassName");
         foreach ($aSkipedProps as $propName => $ids) {
-            $output->writeln($propName . ': ' . implode(', ', $ids));       
+            $output->writeln('Prop name: ' . $propName);
+            $output->writeln($shortClassName . ' ids: ' . implode(', ', $ids));
         }
     }
 }
 
-function updateCryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output) {
+function updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output) {
     $output->write("$moduleName->$configName: ");
     $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
     if ($configValue) {
@@ -114,12 +109,12 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
 
         $allObjectsCount = $class::count();
         $objectsCount = $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
-        
+
         $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
         if ($objectsCount > 0) {
-            $question = new ConfirmationQuestion('Update crypted properties for them? [yes]', true);
+            $question = new ConfirmationQuestion('Update encrypted properties for them? [yes]', true);
             if ($helper->ask($input, $output, $question)) {
-                updateCryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
+                updateEncryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
             }
         } else {
             $output->writeln('No objects found');
@@ -179,7 +174,7 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
         }
 
         // update encrypted data in configs
-        $question = new ConfirmationQuestion('Update encrypted data in configs [no]', false);
+        $question = new ConfirmationQuestion('Update encrypted data in config files? [no]', false);
         if ($helper->ask($input, $output, $question)) {
             $settings = [
                 'CpanelIntegrator' => 'CpanelPassword',
@@ -199,7 +194,7 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
             ];
 
             foreach ($settings as $moduleName => $configName) {
-                updateCryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output);
+                updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output);
             }
             $output->writeln("");
         }
