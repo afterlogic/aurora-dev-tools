@@ -42,7 +42,7 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $new
                     } else {
                         $item->{$propName} = $propValue;
                     }
-                } else {
+                } elseif ($propValue !== null) {
                     if (!isset($aSkipedProps[$propName])) {
                         $aSkipedProps[$propName] = [];
                     }
