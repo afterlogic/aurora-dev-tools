@@ -14,6 +14,7 @@ use Symfony\Component\Console\SingleCommandApplication;
 use Symfony\Component\Console\Question\Question;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Helper\ProgressBar;
+use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
@@ -101,25 +102,32 @@ function updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $ou
 
 function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $helper, $force) {
 
-    $shortClassName = (new \ReflectionClass($class))->getShortName();
+    $classParts = explode('\\', $class);
+    $shortClassName = end($classParts);
 
     $output->writeln("Process $shortClassName objects");
+
     if (class_exists($class)) {
-        if ($force) {
-            $class::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
-        }
+        $classTablename = with(new $class)->getTable();
+        if (Capsule::schema()->hasTable($classTablename)) {
+            if ($force) {
+                $class::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
+            }
 
-        $allObjectsCount = $class::count();
-        $objectsCount = $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
+            $allObjectsCount = $class::count();
+            $objectsCount = $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
 
-        $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
-        if ($objectsCount > 0) {
-            $question = new ConfirmationQuestion('Update encrypted properties for them? [yes]', true);
-            if ($helper->ask($input, $output, $question)) {
-                updateEncryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
+            $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
+            if ($objectsCount > 0) {
+                $question = new ConfirmationQuestion('Update encrypted properties for them? [yes]', true);
+                if ($helper->ask($input, $output, $question)) {
+                    updateEncryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
+                }
+            } else {
+                $output->writeln('No objects found');
             }
         } else {
-            $output->writeln('No objects found');
+            $output->writeln("$classTablename table not found");
         }
     } else {
         $output->writeln("$shortClassName class not found");
