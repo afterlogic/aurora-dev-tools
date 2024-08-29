@@ -18,7 +18,7 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
-function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $newSalt, $count, $output) {
+function updateEncryptedProp($class, $shortClassName, $propNames, $oldEncryptionKey, $newEncryptionKey, $count, $output) {
     $progressBar = new ProgressBar($output, $count);
     $progressBar->setFormat('verbose');
     $progressBar->setBarCharacter('<info>=</info>');
@@ -29,15 +29,15 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $new
     if (!is_array($propNames)) {
         $propNames = [$propNames];
     }
-    $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->chunk(10000, function ($items) use ($propNames, $oldSalt, $newSalt, $progressBar, &$aSkipedProps) {
+    $class::where('Properties->EncryptionKeyIsUpdated', false)->orWhere('Properties->EncryptionKeyIsUpdated', null)->chunk(10000, function ($items) use ($propNames, $oldEncryptionKey, $newEncryptionKey, $progressBar, &$aSkipedProps) {
         foreach ($items as $item) {
             foreach ($propNames as $propName) {
-                Api::$sSalt = $oldSalt;
+                Api::$sEncryptionKey = $oldEncryptionKey;
                 $propValue = $item->{$propName};
                 if ($propValue) {
                     $decryptedValue = \Aurora\System\Utils::DecryptValue($propValue);
 
-                    Api::$sSalt = $newSalt;
+                    Api::$sEncryptionKey = $newEncryptionKey;
                     if ($decryptedValue) {
                         $item->{$propName} = \Aurora\System\Utils::EncryptValue($decryptedValue);
                     } else {
@@ -52,7 +52,7 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $new
                     }
                 }
             }
-            $item->setExtendedProp('SaltIsUpdated', true);
+            $item->setExtendedProp('EncryptionKeyIsUpdated', true);
             if ($item->save()) {
                 $progressBar->advance();
             } else {
@@ -76,16 +76,16 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldSalt, $new
     }
 }
 
-function updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output) {
+function updateEncryptedConfig($moduleName, $configName, $oldEncryptionKey, $newEncryptionKey, $output) {
     if (Api::$oModuleManager->isModuleLoaded($moduleName)) {
         $output->write("$moduleName->$configName: ");
         $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
         if ($configValue) {
-            Api::$sSalt = $oldSalt;
+            Api::$sEncryptionKey = $oldEncryptionKey;
             $value = \Aurora\System\Utils::DecryptValue($configValue);
 
             if ($value) {
-                Api::$sSalt = $newSalt;
+                Api::$sEncryptionKey = $newEncryptionKey;
                 $value = \Aurora\System\Utils::EncryptValue($value);
                 Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
                 Api::$oModuleManager->saveModuleConfigValue($moduleName);
@@ -100,7 +100,7 @@ function updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $ou
     }
 }
 
-function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $helper, $force) {
+function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $input, $output, $helper, $force) {
 
     $classParts = explode('\\', $class);
     $shortClassName = end($classParts);
@@ -111,17 +111,17 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
         $classTablename = with(new $class)->getTable();
         if (Capsule::schema()->hasTable($classTablename)) {
             if ($force) {
-                $class::where('Properties->SaltIsUpdated', true)->update(['Properties->SaltIsUpdated' => false]);
+                $class::where('Properties->EncryptionKeyIsUpdated', true)->update(['Properties->EncryptionKeyIsUpdated' => false]);
             }
 
             $allObjectsCount = $class::count();
-            $objectsCount = $class::where('Properties->SaltIsUpdated', false)->orWhere('Properties->SaltIsUpdated', null)->count();
+            $objectsCount = $class::where('Properties->EncryptionKeyIsUpdated', false)->orWhere('Properties->EncryptionKeyIsUpdated', null)->count();
 
             $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
             if ($objectsCount > 0) {
                 $question = new ConfirmationQuestion('Update encrypted properties for them? [yes]', true);
                 if ($helper->ask($input, $output, $question)) {
-                    updateEncryptedProp($class, $shortClassName, $props, $oldSalt, $newSalt, $objectsCount, $output);
+                    updateEncryptedProp($class, $shortClassName, $props, $oldEncryptionKey, $newEncryptionKey, $objectsCount, $output);
                 }
             } else {
                 $output->writeln('No objects found');
@@ -135,38 +135,41 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
 }
 
 (new SingleCommandApplication())
-    ->setName('Update salt script') // Optional
+    ->setName('Update encryption key script') // Optional
     ->setVersion('1.0.0') // Optional
-    ->addArgument('force', InputArgument::OPTIONAL, 'Force reset SaltIsUpdated flag for all objects')
+    ->addArgument('force', InputArgument::OPTIONAL, 'Force reset EncryptionKeyIsUpdated flag for all objects')
     ->setCode(function (InputInterface $input, OutputInterface $output) {
         $helper = $this->getHelper('question');
         $force = $input->getArgument('force');
 
-        $bakSaltPath = Api::DataPath() . '/salt8.bak.php';
-        if (file_exists($bakSaltPath)) {
-            $newSalt = Api::$sSalt;
-            include $bakSaltPath;
-            $oldSalt = Api::$sSalt;
-            include(Api::GetSaltPath());
-        } elseif (file_exists(Api::GetSaltPath())) {
-            $oldSalt = Api::$sSalt;
+        $encryptionKeyPath = Api::GetEncryptionKeyPath();
+        $pathInfo = pathinfo($encryptionKeyPath);
+        $bakEncryptionKeyPath = $pathInfo['dirname'] . '/' . $pathInfo['filename'] . '.bak.' . $pathInfo['extension'];
 
-            $systemUser = fileowner(Api::GetSaltPath());
+        if (file_exists($bakEncryptionKeyPath)) {
+            $newEncryptionKey = Api::$sEncryptionKey;
+            include $bakEncryptionKeyPath;
+            $oldEncryptionKey = Api::$sEncryptionKey;
+            include(Api::GetEncryptionKeyPath());
+        } elseif (file_exists($encryptionKeyPath)) {
+            $oldEncryptionKey = Api::$sEncryptionKey;
+
+            $systemUser = fileowner($encryptionKeyPath);
             $systemUser = is_numeric($systemUser) ? posix_getpwuid($systemUser)['name'] : $systemUser;        
-            $question = new Question('Please enter the owner name for the new salt file [' . $systemUser . ']:', $systemUser);
+            $question = new Question('Please enter the owner name for the new encryption key file [' . $systemUser . ']:', $systemUser);
             $systemUser = $helper->ask($input, $output, $question);
 
-            rename(Api::GetSaltPath(), $bakSaltPath);
-            Api::InitSalt();
-            chown(Api::GetSaltPath(), $systemUser);
-            include(Api::GetSaltPath());
-            $newSalt = Api::$sSalt;
+            rename($encryptionKeyPath, $bakEncryptionKeyPath);
+            Api::InitEncryptionKey();
+            chown($encryptionKeyPath, $systemUser);
+            include($encryptionKeyPath);
+            $newEncryptionKey = Api::$sEncryptionKey;
         } else {
-            $output->writeln('Salt file not foud');
+            $output->writeln('Encryption key file not foud');
         }
 
-        $output->writeln("Old salt: $oldSalt");
-        $output->writeln("New salt: $newSalt");
+        $output->writeln("Old encryption key: $oldEncryptionKey");
+        $output->writeln("New encryption key: $newEncryptionKey");
         $output->writeln("");
 
         // update encrypted data for classes
@@ -179,7 +182,7 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
         ];
 
         foreach ($objects as $class => $props) {
-            processObject($class, $props, $oldSalt, $newSalt, $input, $output, $helper, $force);
+            processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $input, $output, $helper, $force);
             $output->writeln("");
         }
 
@@ -204,15 +207,15 @@ function processObject($class, $props, $oldSalt, $newSalt, $input, $output, $hel
             ];
 
             foreach ($settings as $moduleName => $configName) {
-                updateEncryptedConfig($moduleName, $configName, $oldSalt, $newSalt, $output);
+                updateEncryptedConfig($moduleName, $configName, $oldEncryptionKey, $newEncryptionKey, $output);
             }
             $output->writeln("");
         }
 
-        if (file_exists($bakSaltPath)) {
-            $question = new ConfirmationQuestion('Remove backup salt-file? [no]', false);
+        if (file_exists($bakEncryptionKeyPath)) {
+            $question = new ConfirmationQuestion('Remove backup encryption key file? [no]', false);
             if ($helper->ask($input, $output, $question)) {
-                unlink($bakSaltPath);
+                unlink($bakEncryptionKeyPath);
                 $output->writeln("");
             }
         }
