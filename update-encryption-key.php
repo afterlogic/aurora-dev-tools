@@ -155,17 +155,19 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             $oldEncryptionKey = Api::$sEncryptionKey;
 
             $systemUser = fileowner($encryptionKeyPath);
-            $systemUser = is_numeric($systemUser) ? posix_getpwuid($systemUser)['name'] : $systemUser;        
+            $systemUser = (is_numeric($systemUser) && function_exists('posix_getpwuid')) ? posix_getpwuid($systemUser)['name'] : $systemUser;
             $question = new Question('Please enter the owner name for the new encryption key file [' . $systemUser . ']:', $systemUser);
             $systemUser = $helper->ask($input, $output, $question);
 
             rename($encryptionKeyPath, $bakEncryptionKeyPath);
             Api::InitEncryptionKey();
-            chown($encryptionKeyPath, $systemUser);
+            if ($systemUser !== '') {
+                chown($encryptionKeyPath, $systemUser);
+            }
             include($encryptionKeyPath);
             $newEncryptionKey = Api::$sEncryptionKey;
         } else {
-            $output->writeln('Encryption key file not foud');
+            $output->writeln('Encryption key file not found');
         }
 
         $output->writeln("Old encryption key: $oldEncryptionKey");
