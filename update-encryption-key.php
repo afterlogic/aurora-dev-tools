@@ -180,7 +180,7 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             "\Aurora\Modules\Mail\Models\Fetcher" => ['IncomingPassword'],
             "\Aurora\Modules\Mail\Models\Server" => ['SmtpPassword'],
             "\Aurora\Modules\StandardAuth\Models\Account" => ['Password'],
-            "\Aurora\Modules\Core\Models\User" => ['TwoFactorAuth::BackupCodes', 'TwoFactorAuth::Secret']
+            "\Aurora\Modules\Core\Models\User" => ['TwoFactorAuth::BackupCodes', 'TwoFactorAuth::Secret', 'IframeAppWebclient::Password']
         ];
 
         foreach ($objects as $class => $props) {
