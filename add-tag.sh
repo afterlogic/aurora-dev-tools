@@ -84,7 +84,7 @@ do
 		printf "${GREEN}${LATEST_TAG}${NC} > ${RED}${NEW_TAG}${NC} \n"
 		LATEST_COMMITS=$(git log $LATEST_TAG..HEAD --oneline --no-decorate)
 		printf "${YELLOW}Latest commits are the following:${NC}\n"
-		printf "$LATEST_COMMITS \n"
+		printf "${LATEST_COMMITS//\\/\\\\} \n" # the //\\/\\\\ replaces \ with \\ in LATEST_COMMITS
 		
 		CONFIRM_TAG=false
 		while true; do
