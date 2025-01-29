@@ -18,6 +18,11 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
+function logMessage($output, $message) {
+    $output->writeln($message);
+    Api::Log($message, \Aurora\System\Enums\LogLevel::Full, 'update-encryption-key-');
+}
+
 function updateEncryptedProp($class, $shortClassName, $propNames, $oldEncryptionKey, $newEncryptionKey, $count, $output) {
     $progressBar = new ProgressBar($output, $count);
     $progressBar->setFormat('verbose');
@@ -61,17 +66,17 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldEncryption
         }
     });
     $progressBar->finish();
-    $output->writeln('');
+    logMessage($output, '');
     if ($aSkipedProps) {
         foreach ($aSkipedProps as $propName => $ids) {
             if (count($ids) === 0) {
                 unset($aSkipedProps[$propName]);
             }
         }
-        $output->writeln("Can't read encrypted property for $shortClassName");
+        logMessage($output, "Can't read encrypted property for $shortClassName");
         foreach ($aSkipedProps as $propName => $ids) {
-            $output->writeln('Prop name: ' . $propName);
-            $output->writeln($shortClassName . ' ids: ' . implode(', ', $ids));
+            logMessage($output, 'Prop name: ' . $propName);
+            logMessage($output, $shortClassName . ' ids: ' . implode(', ', $ids));
         }
     }
 }
@@ -90,12 +95,12 @@ function updateEncryptedConfig($moduleName, $configName, $oldEncryptionKey, $new
                 Api::$oModuleManager->setModuleConfigValue($moduleName, $configName, $value);
                 Api::$oModuleManager->saveModuleConfigValue($moduleName);
 
-                $output->writeln("Config file updated");
+                logMessage($output, "Config file updated");
             } else {
-                $output->writeln("Can't decrypt config value");
+                logMessage($output, "Can't decrypt config value");
             }
         } else {
-            $output->writeln("Config value not found");
+            logMessage($output, "Config value not found");
         }
     }
 }
@@ -105,7 +110,7 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
     $classParts = explode('\\', $class);
     $shortClassName = end($classParts);
 
-    $output->writeln("Process $shortClassName objects");
+    logMessage($output, "Process $shortClassName objects");
 
     if (class_exists($class)) {
         $classTablename = with(new $class)->getTable();
@@ -117,20 +122,20 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             $allObjectsCount = $class::count();
             $objectsCount = $class::where('Properties->EncryptionKeyIsUpdated', false)->orWhere('Properties->EncryptionKeyIsUpdated', null)->count();
 
-            $output->writeln($allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
+            logMessage($output, $allObjectsCount . ' object(s) found, ' . $objectsCount . ' of them have not yet been updated');
             if ($objectsCount > 0) {
                 $question = new ConfirmationQuestion('Update encrypted properties for them? [yes]', true);
                 if ($helper->ask($input, $output, $question)) {
                     updateEncryptedProp($class, $shortClassName, $props, $oldEncryptionKey, $newEncryptionKey, $objectsCount, $output);
                 }
             } else {
-                $output->writeln('No objects found');
+                logMessage($output, 'No objects found');
             }
         } else {
-            $output->writeln("$classTablename table not found");
+            logMessage($output, "$classTablename table not found");
         }
     } else {
-        $output->writeln("$shortClassName class not found");
+        logMessage($output, "$shortClassName class not found");
     }
 }
 
@@ -167,12 +172,12 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             include($encryptionKeyPath);
             $newEncryptionKey = Api::$sEncryptionKey;
         } else {
-            $output->writeln('Encryption key file not found');
+            logMessage($output, 'Encryption key file not found');
         }
 
-        $output->writeln("Old encryption key: $oldEncryptionKey");
-        $output->writeln("New encryption key: $newEncryptionKey");
-        $output->writeln("");
+        logMessage($output, "Old encryption key: $oldEncryptionKey");
+        logMessage($output, "New encryption key: $newEncryptionKey");
+        logMessage($output, "");
 
         // update encrypted data for classes
         $objects = [
@@ -185,7 +190,7 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
 
         foreach ($objects as $class => $props) {
             processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $input, $output, $helper, $force);
-            $output->writeln("");
+            logMessage($output, "");
         }
 
         // update encrypted data in configs
@@ -211,14 +216,14 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             foreach ($settings as $moduleName => $configName) {
                 updateEncryptedConfig($moduleName, $configName, $oldEncryptionKey, $newEncryptionKey, $output);
             }
-            $output->writeln("");
+            logMessage($output, "");
         }
 
         if (file_exists($bakEncryptionKeyPath)) {
             $question = new ConfirmationQuestion('Remove backup encryption key file? [no]', false);
             if ($helper->ask($input, $output, $question)) {
                 unlink($bakEncryptionKeyPath);
-                $output->writeln("");
+                logMessage($output, "");
             }
         }
 
@@ -232,9 +237,9 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             $oSettings->AdminPassword = password_hash(trim($sSuperadminPassword), PASSWORD_BCRYPT);
 
             if ($oSettings->Save()) {
-                $output->writeln('Superadmin password was set successfully!');
+                logMessage($output, 'Superadmin password was set successfully!');
             } else {
-                $output->writeln('Can\'t save superadmin password.');
+                logMessage($output, 'Can\'t save superadmin password.');
             }
         }
     })->run();
