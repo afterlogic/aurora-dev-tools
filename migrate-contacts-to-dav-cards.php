@@ -82,7 +82,7 @@ class Helper
     {
         $bInitialized = false;
         if (self::$InitialisedUserId !== $iUserId) {
-            $oUser = CoreModule::Decorator()->GetUserWithoutRoleCheck($iUserId);
+            $oUser = \Aurora\Api::getUserById($iUserId);
             self::$InitialisedUserId = $iUserId;
             if ($oUser) {
                 $aPrincipalProperties = \Afterlogic\DAV\Backend::Principal()->getPrincipalByPath(Constants::PRINCIPALS_PREFIX . $oUser->PublicId);
