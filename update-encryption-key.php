@@ -18,9 +18,28 @@ use Illuminate\Database\Capsule\Manager as Capsule;
 
 Api::Init();
 
-function logMessage($output, $message) {
-    $output->writeln($message);
-    Api::Log($message, \Aurora\System\Enums\LogLevel::Full, 'update-encryption-key-');
+abstract class Enums
+{
+    public const file = 1;
+    public const console = 2;
+    public const both = 3;
+}
+function logMessage($output, $message, $mode = Enums::both) {
+    if ($mode === Enums::console || $mode === Enums::both) {
+        $output->writeln($message);
+    }
+    if ($mode === Enums::file || $mode === Enums::both) {
+        Api::Log($message, \Aurora\System\Enums\LogLevel::Full, 'update-encryption-key-');
+    }
+}
+
+function logObjectResults($output, $data, $title) {
+    logMessage($output, "  $title:");
+    foreach ($data as $propName => $ids) {
+        logMessage($output, "    Property: $propName");
+        logMessage($output, "    Ids: " . implode(', ', $ids));
+    }
+    logMessage($output, "");
 }
 
 function updateEncryptedProp($class, $shortClassName, $propNames, $oldEncryptionKey, $newEncryptionKey, $count, $output) {
@@ -29,61 +48,92 @@ function updateEncryptedProp($class, $shortClassName, $propNames, $oldEncryption
     $progressBar->setBarCharacter('<info>=</info>');
 
     $progressBar->start();
-    $aSkipedProps = [];
+    $aObjectResults= [
+        'missing' => [],
+        'updated' => [],
+        'error' => [],
+        'empty' => [],
+    ];
 
-    if (!is_array($propNames)) {
-        $propNames = [$propNames];
+    foreach ($propNames as $propName) {
+        $aObjectResults['missing'][$propName] = [];
+        $aObjectResults['updated'][$propName] = [];
+        $aObjectResults['error'][$propName] = [];
+        $aObjectResults['empty'][$propName] = [];
     }
-    $class::where('Properties->EncryptionKeyIsUpdated', false)->orWhere('Properties->EncryptionKeyIsUpdated', null)->chunk(10000, function ($items) use ($propNames, $oldEncryptionKey, $newEncryptionKey, $progressBar, &$aSkipedProps) {
-        foreach ($items as $item) {
-            foreach ($propNames as $propName) {
-                Api::$sEncryptionKey = $oldEncryptionKey;
-                $propValue = $item->{$propName};
-                if ($propValue) {
-                    $decryptedValue = \Aurora\System\Utils::DecryptValue($propValue);
 
-                    Api::$sEncryptionKey = $newEncryptionKey;
+    $class::where('Properties->EncryptionKeyIsUpdated', false)->orWhere('Properties->EncryptionKeyIsUpdated', null)->chunk(10000, function ($items) use ($propNames, $oldEncryptionKey, $newEncryptionKey, $progressBar, &$aObjectResults, $output) {
+        foreach ($items as $item) {
+            $bObjectError = false;
+            foreach ($propNames as $propName) {
+                if (strpos($propName, '::') !== false) {
+                    $propValue = $item->getExtendedProp($propName);
+
+                    $decryptedValue = \Aurora\System\Utils::DecryptValue($propValue);
+                            
                     if ($decryptedValue) {
-                        $item->{$propName} = \Aurora\System\Utils::EncryptValue($decryptedValue);
+                        Api::$sEncryptionKey = $newEncryptionKey;
+                        $item->setExtendedProp($propName, \Aurora\System\Utils::EncryptValue($decryptedValue));
+                        //store updated item id
+                        $aObjectResults['updated'][$propName][] = $item->Id;
                     } else {
-                        $item->{$propName} = $propValue;
+                        //store failed item id
+                        $bObjectError = true;
+                        $aObjectResults['error'][$propName][] = $item->Id;
                     }
-                } elseif ($propValue !== null) {
-                    if (!isset($aSkipedProps[$propName])) {
-                        $aSkipedProps[$propName] = [];
-                    }
-                    if (!in_array($item->Id, $aSkipedProps[$propName])) {
-                        $aSkipedProps[$propName][] = $item->Id;
+                } else {
+                    $rawValue = trim($item->getRawOriginal($propName));
+                    if ($rawValue !== '') {
+                        Api::$sEncryptionKey = $oldEncryptionKey;
+                    
+                        // Most of model properties are decrypted automatically when they are read.
+                        $propValue = $item->{$propName};
+    
+                        if ($propValue) {
+                            Api::$sEncryptionKey = $newEncryptionKey;
+                            $item->{$propName} = $propValue;
+                            //store updated item id
+                            $aObjectResults['updated'][$propName][] = $item->Id;
+                        } elseif ($propValue === false || $rawValue !== '' && trim($propValue) === '') {
+                            // false means decryption error, but currently auto encrypted fields return empty strings when value cannot be decrypted
+                            $bObjectError = true;
+                            $aObjectResults['error'][$propName][] = $item->Id;
+                        } elseif ($propValue === null) {
+                            $aObjectResults['missing'][$propName][] = $item->Id;
+                        } elseif (trim($propValue) === '') {
+                            $aObjectResults['empty'][$propName][] = $item->Id;
+                        }
+                    } else {
+                        $aObjectResults['empty'][$propName][] = $item->Id;
                     }
                 }
             }
-            $item->setExtendedProp('EncryptionKeyIsUpdated', true);
+
+            // $item->setExtendedProp('EncryptionKeyIsUpdated', !$bObjectError);
+            logMessage($output, "EncryptionKeyIsUpdated: $item->Id: " . (!$bObjectError ? "true" : "false"));
             if ($item->save()) {
                 $progressBar->advance();
             } else {
-                // log
+                logMessage($output, "Object saving error: $item->getName(): $item->Id");
             }
         }
     });
+
     $progressBar->finish();
-    logMessage($output, '');
-    if ($aSkipedProps) {
-        foreach ($aSkipedProps as $propName => $ids) {
-            if (count($ids) === 0) {
-                unset($aSkipedProps[$propName]);
-            }
-        }
-        logMessage($output, "Can't read encrypted property for $shortClassName");
-        foreach ($aSkipedProps as $propName => $ids) {
-            logMessage($output, 'Prop name: ' . $propName);
-            logMessage($output, $shortClassName . ' ids: ' . implode(', ', $ids));
-        }
-    }
+    logMessage($output, "");
+    logMessage($output, "'$shortClassName' objects updating results:");
+
+    logObjectResults($output, $aObjectResults['updated'], "Updated");
+    logObjectResults($output, $aObjectResults['error'], "Errors");
+    logObjectResults($output, $aObjectResults['missing'], "Missing");
+    logObjectResults($output, $aObjectResults['empty'], "Empty");
 }
 
 function updateEncryptedConfig($moduleName, $configName, $oldEncryptionKey, $newEncryptionKey, $output) {
     if (Api::$oModuleManager->isModuleLoaded($moduleName)) {
-        $output->write("$moduleName->$configName: ");
+
+        logMessage($output, "Processing $moduleName->$configName: ");
+
         $configValue = Api::$oModuleManager->getModuleConfigValue($moduleName, $configName);
         if ($configValue) {
             Api::$sEncryptionKey = $oldEncryptionKey;
@@ -110,7 +160,7 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
     $classParts = explode('\\', $class);
     $shortClassName = end($classParts);
 
-    logMessage($output, "Process $shortClassName objects");
+    logMessage($output, "Processing $class objects");
 
     if (class_exists($class)) {
         $classTablename = with(new $class)->getTable();
@@ -175,8 +225,8 @@ function processObject($class, $props, $oldEncryptionKey, $newEncryptionKey, $in
             logMessage($output, 'Encryption key file not found');
         }
 
-        logMessage($output, "Old encryption key: $oldEncryptionKey");
-        logMessage($output, "New encryption key: $newEncryptionKey");
+        logMessage($output, "Old encryption key: $oldEncryptionKey", Enums::console);
+        logMessage($output, "New encryption key: $newEncryptionKey", Enums::console);
         logMessage($output, "");
 
         // update encrypted data for classes
