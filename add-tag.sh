@@ -90,6 +90,9 @@ do
 		while true; do
 			printf "${YELLOW}Do you want to add tag: ${RED}${NEW_TAG} ${YELLOW}?${NC} (y/n) \n"
 			read -s -n 1 -p "" CONFIRM_TAG
+			# discard any extra keystrokes left in the input buffer (e.g. "yyyy" instead of "y"),
+			# so they don't get consumed as answers to prompts for later modules
+			read -s -t 0.05 -n 1000 -r _EXTRA_INPUT 2>/dev/null
 			case $CONFIRM_TAG in
 				y ) printf $CONFIRM_TAG && update_push "$NEW_TAG" && break;;
 				n ) printf $CONFIRM_TAG && break;;
