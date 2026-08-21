@@ -82,7 +82,7 @@ do
 		printf "No tag update is needed. The latest tag is ${GREEN}${LATEST_TAG}${NC} \n"
 	else
 		printf "${GREEN}${LATEST_TAG}${NC} > ${RED}${NEW_TAG}${NC} \n"
-		LATEST_COMMITS=$(git log $LATEST_TAG..HEAD --oneline --no-decorate)
+		LATEST_COMMITS=$(git log $LATEST_TAG..HEAD --no-decorate --pretty=format:"%h %an: %s")
 		printf "${YELLOW}Latest commits are the following:${NC}\n"
 		printf "${LATEST_COMMITS//\\/\\\\} \n" # the //\\/\\\\ replaces \ with \\ in LATEST_COMMITS
 		
